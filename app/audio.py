@@ -4,6 +4,11 @@ Allowlist chico (MP3/WAV/M4A/MP4), así evitamos depender de libmagic nativo."""
 ALLOWED = ("wav", "mp3", "m4a", "mp4")
 
 
+def is_midi(head):
+    """True si los primeros bytes son la cabecera de un MIDI estándar (§magic bytes)."""
+    return head is not None and head[:4] == b"MThd"
+
+
 def detect_audio_kind(head):
     """Devuelve 'wav'|'mp3'|'m4a'|'mp4' según los primeros bytes, o None si no coincide."""
     if head is None or len(head) < 12:

@@ -62,17 +62,41 @@ def musicxml_to_pdf(xml_path, pdf_path, mscore_bin):
     _run_mscore(mscore_bin, xml_path, pdf_path)
 
 
-def _consolidate_midi(midi_path, bpm):
-    """Funde el MIDI del modelo en una sola pista de piano con el tempo estimado. MuseScore
-    auto-separa las manos en un gran pentagrama al importar una única pista de piano."""
+def _consolidate_midi(midi_path, bpm=None):
+    """Funde el MIDI en una sola pista de piano. MuseScore auto-separa las manos en un gran
+    pentagrama al importar una única pista de piano. Si bpm es None, usa el tempo del MIDI."""
     import pretty_midi
     pm = pretty_midi.PrettyMIDI(midi_path)
+    if bpm is None:
+        try:
+            _, tempi = pm.get_tempo_changes()
+            bpm = float(tempi[0]) if len(tempi) else 120.0
+        except Exception:
+            bpm = 120.0
     notes = [n for inst in pm.instruments for n in inst.notes]
-    out = pretty_midi.PrettyMIDI(initial_tempo=float(bpm) if bpm else 120.0)
+    out = pretty_midi.PrettyMIDI(initial_tempo=float(bpm) or 120.0)
     piano = pretty_midi.Instrument(program=0, name="Piano")
     piano.notes = notes
     out.instruments.append(piano)
     out.write(midi_path)
+
+
+def midi_to_score(src_midi, work_dir, title="", mscore_bin=None):
+    """MIDI subido por el usuario -> (musicxml, pdf). Igual que transcribe() pero sin el paso
+    audio->MIDI: consolida a piano y MuseScore genera la notación. Deja notes.mid en work_dir."""
+    import shutil
+    midi = os.path.join(work_dir, "notes.mid")
+    xml = os.path.join(work_dir, "score.musicxml")
+    pdf = os.path.join(work_dir, "score.pdf")
+    shutil.copy(src_midi, midi)
+    _consolidate_midi(midi)  # tempo del propio MIDI
+    if not mscore_bin:
+        raise RuntimeError("MuseScore es requerido para generar la partitura (configurar MSCORE_BIN)")
+    _run_mscore(mscore_bin, midi, xml)
+    _lock_clefs(xml)
+    _set_musicxml_metadata(xml, title, "", "")
+    _run_mscore(mscore_bin, xml, pdf)
+    return xml, pdf
 
 
 def _set_musicxml_metadata(xml_path, title, composer, arranger):

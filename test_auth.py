@@ -136,6 +136,14 @@ def run():
         insts = {s.instrument for s in db.session.scalars(db.select(Score).filter_by(user_id=a_id))}
     assert insts == {"piano"}, f"la app debería producir solo piano; hay {insts}"
 
+    # 9b. Upload MIDI: valida magic bytes (MThd) y requiere auth.
+    r = admin.post("/upload-midi", data={"midi": (BytesIO(b"noesmidi...."), "x.mid")},
+                   content_type="multipart/form-data", follow_redirects=True)
+    assert b"no parece un MIDI" in r.data, "aceptó un MIDI inválido por su extensión"
+    r = app.test_client().post("/upload-midi", data={"midi": (BytesIO(b"MThd\x00\x00\x00\x06"), "x.mid")},
+                               content_type="multipart/form-data")
+    assert r.status_code == 302 and "/login" in r.headers["Location"], "upload-midi sin auth permitido"
+
     # 10. Ingesta por URL: allowlist en la ruta (§6.4), sin crear job.
     with app.app_context():
         jobs_before = db.session.scalar(db.select(db.func.count()).select_from(Job))

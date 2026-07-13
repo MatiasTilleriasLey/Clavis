@@ -38,6 +38,20 @@
   </form>
 </div>
 
+<div class="card" style="margin-bottom:16px">
+  <span class="label">Desde un MIDI</span>
+  <h3>Subir un MIDI</h3>
+  <p class="muted" style="margin-bottom:16px">
+    ¿Ya tenés el MIDI? Subilo y generamos la partitura, el audio y el modo piano — sin transcribir.</p>
+  <form method="post" action="{{ url_for('main.upload_midi') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field">
+      <input type="file" name="midi" accept=".mid,.midi" required>
+    </div>
+    <button type="submit">Generar desde MIDI</button>
+  </form>
+</div>
+
 {% if jobs %}
 <div class="card" style="margin-bottom:16px">
   <span class="label">En proceso</span>

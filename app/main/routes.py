@@ -8,11 +8,11 @@ from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
 from .. import mailer, storage
-from ..audio import detect_audio_kind
+from ..audio import detect_audio_kind, is_midi
 from ..auth.routes import admin_required
 from ..extensions import db
 from ..jobs import cancel as cancel_job
-from ..jobs import enqueue_ingest, enqueue_transcription
+from ..jobs import enqueue_ingest, enqueue_midi, enqueue_transcription
 from ..models import Job, Score, User
 from .forms import UploadForm
 
@@ -56,6 +56,27 @@ def upload():
     src = os.path.join(work_dir, f"{uuid.uuid4().hex}.{kind}")
     f.save(src)
     job = enqueue_transcription(current_user.id, src, work_dir, title, separate)
+    return redirect(url_for("main.job_view", job_id=job.id))
+
+
+@bp.post("/upload-midi")
+@login_required
+def upload_midi():
+    f = request.files.get("midi")
+    if f is None or not f.filename:
+        flash("Elegí un archivo MIDI.")
+        return redirect(url_for("auth.dashboard"))
+    head = f.stream.read(4)
+    f.stream.seek(0)
+    if not is_midi(head):  # valida magic bytes MThd, no la extensión (§subprocess)
+        flash("El archivo no parece un MIDI válido (.mid / .midi).")
+        return redirect(url_for("auth.dashboard"))
+
+    title = (os.path.splitext(f.filename or "midi")[0] or "midi")[:200]
+    work_dir = tempfile.mkdtemp(prefix="clavis_")
+    src = os.path.join(work_dir, f"{uuid.uuid4().hex}.mid")
+    f.save(src)
+    job = enqueue_midi(current_user.id, src, work_dir, title)
     return redirect(url_for("main.job_view", job_id=job.id))
 
 

@@ -61,6 +61,58 @@ def enqueue_ingest(user_id, url, work_dir, title, separate=False):
     return job
 
 
+def enqueue_midi(user_id, midi_path, work_dir, title):
+    """Job que genera la partitura desde un MIDI subido (sin transcripción, solo MuseScore)."""
+    from flask import current_app
+    from .models import Job
+
+    job = Job(user_id=user_id, status="queued", work_dir=work_dir)
+    db.session.add(job)
+    db.session.commit()
+
+    if current_app.config.get("RQ_ASYNC", True):
+        q = Queue(QUEUE_NAME, connection=_redis())
+        rq_job = q.enqueue("app.jobs.midi_job", job.id, midi_path, work_dir, user_id, title,
+                           job_timeout=JOB_TIMEOUT)
+        job.rq_id = rq_job.id
+        db.session.commit()
+    else:
+        midi_job(job.id, midi_path, work_dir, user_id, title)
+    return job
+
+
+def midi_job(job_id, midi_path, work_dir, user_id, title):
+    from flask import current_app, has_app_context
+
+    def work(app):
+        from .models import Score
+        from .pipeline import midi_to_score
+        _stage(job_id, "generando la partitura")
+        out_dir = os.path.join(work_dir, "out")
+        os.makedirs(out_dir, exist_ok=True)
+        mscore = app.config.get("MSCORE_BIN")
+        xml, pdf = midi_to_score(midi_path, out_dir, title=title, mscore_bin=mscore)
+        midi = os.path.join(out_dir, "notes.mid")
+        has_midi = os.path.exists(midi)
+        has_pdf = bool(pdf) and os.path.exists(pdf)
+        stored = uuid.uuid4().hex
+        storage.save(user_id, stored, xml, pdf if has_pdf else None, midi if has_midi else None)
+        score = Score(user_id=user_id, title=title, instrument="piano", stored_uuid=stored,
+                      has_pdf=has_pdf, has_midi=has_midi)
+        db.session.add(score)
+        db.session.commit()
+        return [score]
+
+    if has_app_context():
+        app = current_app._get_current_object()
+        _execute(job_id, work_dir, app, lambda: work(app))
+        return
+    from app import create_app
+    app = create_app()
+    with app.app_context():
+        _execute(job_id, work_dir, app, lambda: work(app))
+
+
 def ingest_job(job_id, url, work_dir, user_id, title, separate=False):
     from flask import current_app, has_app_context
 
