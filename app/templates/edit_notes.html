@@ -16,6 +16,7 @@
   <button id="play" class="btn btn--ghost">▶ Reproducir</button>
   <button id="rewind" class="btn btn--ghost" title="Volver al inicio">⏮ Desde el inicio</button>
   <button id="undo" class="btn btn--ghost" title="Deshacer (Ctrl+Z)">↶ Deshacer</button>
+  <button id="select-all" class="btn btn--ghost" title="Seleccionar todas las notas (Ctrl+A)">Seleccionar todo</button>
   <button id="save" class="btn btn--primary">Guardar y regenerar</button>
   <button id="fs" class="btn btn--ghost">⛶ Pantalla completa</button>
   <label class="muted" style="font-size:13px">Grilla:
@@ -135,6 +136,10 @@
   function clearSelection() {
     selection.forEach(n => { if (n.el) n.el.style.outline = ''; });
     selection.clear();
+  }
+  function selectAll() {
+    notes.forEach(n => { selection.add(n); if (n.el) n.el.style.outline = '2px solid #f59e0b'; });
+    statusEl.textContent = notes.length + ' notas seleccionadas';
   }
 
   // --- historial (deshacer) ---
@@ -335,10 +340,12 @@
   playBtn.addEventListener('click', startPlay);
   document.getElementById('rewind').addEventListener('click', () => seek(0));
   document.getElementById('undo').addEventListener('click', undo);
+  document.getElementById('select-all').addEventListener('click', selectAll);
   document.addEventListener('keydown', e => {
     const inField = /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName);
     if (inField) return;
-    if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undo(); }   // Ctrl+Z
+    if ((e.ctrlKey || e.metaKey) && e.code === 'KeyA') { e.preventDefault(); selectAll(); }   // Ctrl+A
+    else if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undo(); }   // Ctrl+Z
     else if (e.code === 'Space') { e.preventDefault(); startPlay(); }                     // play/pausa
     else if ((e.code === 'Delete' || e.code === 'Backspace') && selection.size) {
       e.preventDefault(); pushHistory();           // Supr = borra el área seleccionada
