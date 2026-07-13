@@ -20,3 +20,4 @@ instance/
 .DS_Store
 .idea/
 .vscode/
+app/static/soundfont

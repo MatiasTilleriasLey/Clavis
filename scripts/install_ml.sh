@@ -46,3 +46,17 @@ if [ ! -x "$MS_DIR/AppRun" ]; then
   rm -rf "$tmp"
 fi
 echo "MuseScore listo. Poné en tu .env:  MSCORE_BIN=$MS_DIR/AppRun"
+
+# Soundfont de piano para el reproductor de MIDI del navegador (self-hosteado, sin CDN).
+# ~264 samples (3 capas de velocidad), ~9 MB. Solo se baja si falta.
+SF="app/static/soundfont"; INST="$SF/acoustic_grand_piano"
+if [ ! -f "$INST/p60_v79.mp3" ]; then
+  mkdir -p "$INST"
+  B="https://storage.googleapis.com/magentadata/js/soundfonts/sgm_plus/acoustic_grand_piano"
+  echo '{"name":"clavis_piano","instruments":{"0":"acoustic_grand_piano"}}' > "$SF/soundfont.json"
+  curl -s "$B/instrument.json" -o "$INST/instrument.json"
+  .venv/bin/python -c "import json;p='$INST/instrument.json';d=json.load(open(p));d['velocities']=[31,79,111];json.dump(d,open(p,'w'))"
+  for p in $(seq 21 108); do for v in 31 79 111; do echo "$B/p${p}_v${v}.mp3 $INST/p${p}_v${v}.mp3"; done; done \
+    | xargs -P 12 -n 2 sh -c 'curl -sfL "$0" -o "$1"'
+  echo "Soundfont de piano descargado ($(ls "$INST"/*.mp3 | wc -l) samples)."
+fi

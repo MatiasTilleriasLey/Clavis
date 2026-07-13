@@ -21,8 +21,9 @@
 <div class="card" style="margin-bottom:16px">
   <span class="label">Escuchar</span>
   <p class="muted" style="font-size:13px; margin:8px 0">
-    Reproducción sintetizada para revisar cómo quedó la transcripción.</p>
+    Reproducción con sonido de piano para revisar cómo quedó la transcripción.</p>
   <midi-player src="{{ url_for('main.score_midi', score_id=score.id) }}"
+               sound-font="{{ url_for('static', filename='soundfont') }}"
                style="width:100%; display:block"></midi-player>
 </div>
 {% endif %}
