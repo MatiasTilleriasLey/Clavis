@@ -22,5 +22,14 @@ services:
     ports:
       - "127.0.0.1:6379:6379"
 
+  # SMTP de dev: captura los mails, no los envía. UI en http://127.0.0.1:8027
+  # Puertos no estándar para no chocar con otros Mailpit en la misma máquina.
+  # Para SMTP real, cambiar las vars MAIL_* del .env (no toca este contenedor).
+  mailpit:
+    image: axllent/mailpit:latest
+    ports:
+      - "127.0.0.1:1026:1025"   # SMTP
+      - "127.0.0.1:8027:8025"   # UI web
+
 volumes:
   pgdata:

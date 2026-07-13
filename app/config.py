@@ -15,3 +15,12 @@ class Config:
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_SAMESITE = "Strict"
+
+    # SMTP (verificación de email + reseteo). Default = Mailpit en dev.
+    # ponytail: solo config; el envío real se implementa con auth (pasos 2-3).
+    MAIL_SERVER = os.environ.get("MAIL_SERVER", "localhost")
+    MAIL_PORT = int(os.environ.get("MAIL_PORT", "1026"))
+    MAIL_USERNAME = os.environ.get("MAIL_USERNAME") or None
+    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD") or None
+    MAIL_USE_TLS = os.environ.get("MAIL_USE_TLS") == "1"
+    MAIL_DEFAULT_SENDER = os.environ.get("MAIL_DEFAULT_SENDER", "clavis@localhost")
