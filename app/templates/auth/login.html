@@ -1,12 +1,17 @@
 {% extends "base.html" %}
+{% block title %}Login — Clavis{% endblock %}
 {% block content %}
-<h1>Login</h1>
-<form method="post">
-  {{ form.hidden_tag() }}
-  <p>{{ form.email.label }}<br>{{ form.email(size=40) }}</p>
-  <p>{{ form.password.label }}<br>{{ form.password(size=40) }}</p>
-  <p>{{ form.submit() }}</p>
-</form>
-<p><a href="{{ url_for('auth.register') }}">Crear cuenta</a>
- · <a href="{{ url_for('auth.forgot_password') }}">Olvidé mi contraseña</a></p>
+<div class="card auth-card">
+  <h1>Entrar</h1>
+  <form method="post">
+    {{ form.hidden_tag() }}
+    <div class="field">{{ form.email.label }} {{ form.email() }}</div>
+    <div class="field">{{ form.password.label }} {{ form.password() }}</div>
+    {{ form.submit() }}
+  </form>
+  <p class="links">
+    <a href="{{ url_for('auth.register') }}">Crear cuenta</a>
+    · <a href="{{ url_for('auth.forgot_password') }}">Olvidé mi contraseña</a>
+  </p>
+</div>
 {% endblock %}

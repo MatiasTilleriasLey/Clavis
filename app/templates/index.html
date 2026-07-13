@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}Clavis — de audio a partitura{% endblock %}
+{% block content %}
+<section>
+  <span class="label">Transcripción musical local</span>
+  <h1 class="hero__title">Convertí cualquier audio en una partitura editable.</h1>
+  <p class="hero__sub">
+    Subí un archivo o pegá un link, elegí los instrumentos, y obtené una partitura
+    interactiva en el navegador y un PDF descargable. Todo corre en tu red, sin salir afuera.
+  </p>
+  <div class="hero__cta">
+    <a class="btn btn--primary" href="{{ url_for('auth.register') }}">Crear cuenta</a>
+    <a class="btn btn--ghost" href="{{ url_for('auth.login') }}">Ya tengo cuenta</a>
+  </div>
+</section>
+
+<section class="grid">
+  <div class="card">
+    <span class="label">Ingesta</span>
+    <h3>Archivo o link</h3>
+    <p>Subí MP3/WAV/M4A o pegá un enlace de YouTube, Instagram o TikTok.</p>
+  </div>
+  <div class="card">
+    <span class="label">Separación</span>
+    <h3>Instrumento por instrumento</h3>
+    <p>Separá la mezcla en voz, batería, bajo, guitarra, piano y más, y elegí cuáles transcribir.</p>
+  </div>
+  <div class="card">
+    <span class="label">Salida</span>
+    <h3>Partitura + PDF</h3>
+    <p>Render interactivo en el navegador y PDF listo para imprimir, uno por instrumento.</p>
+  </div>
+  <div class="card">
+    <span class="label">Privado</span>
+    <h3>Tus partituras, tuyas</h3>
+    <p>Se guardan asociadas a tu cuenta. El audio original se descarta tras procesar.</p>
+  </div>
+</section>
+{% endblock %}

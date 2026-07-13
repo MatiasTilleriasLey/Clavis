@@ -1,5 +1,5 @@
 import redis
-from flask import Flask, abort, redirect, request, url_for
+from flask import Flask, abort, redirect, render_template, request, url_for
 from sqlalchemy import text
 
 from .config import Config
@@ -41,8 +41,7 @@ def create_app(config_object=Config):
 
     @app.get("/")
     def index():
-        # ponytail: la landing pública real es un paso posterior; por ahora, al login.
-        return redirect(url_for("auth.login"))
+        return render_template("index.html")  # landing pública (dentro de la VPN)
 
     @app.get("/health")
     def health():

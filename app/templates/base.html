@@ -3,14 +3,33 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Clavis</title>
+  <title>{% block title %}Clavis{% endblock %}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/clavis.css') }}">
 </head>
 <body>
-  {% with messages = get_flashed_messages() %}
-    {% if messages %}
-      <ul>{% for m in messages %}<li>{{ m }}</li>{% endfor %}</ul>
-    {% endif %}
-  {% endwith %}
-  {% block content %}{% endblock %}
+  <nav class="nav">
+    <div class="nav__brand"><a href="{{ url_for('index') }}">Clavis</a></div>
+    <div class="nav__actions">
+      {% if current_user.is_authenticated %}
+        <span class="nav__email">{{ current_user.email }}</span>
+        <form method="post" action="{{ url_for('auth.logout') }}">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn--ghost">Salir</button>
+        </form>
+      {% else %}
+        <a class="btn btn--ghost" href="{{ url_for('auth.login') }}">Login</a>
+        <a class="btn btn--primary" href="{{ url_for('auth.register') }}">Registro</a>
+      {% endif %}
+    </div>
+  </nav>
+
+  <main class="container">
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}
+        <ul class="flash">{% for m in messages %}<li>{{ m }}</li>{% endfor %}</ul>
+      {% endif %}
+    {% endwith %}
+    {% block content %}{% endblock %}
+  </main>
 </body>
 </html>

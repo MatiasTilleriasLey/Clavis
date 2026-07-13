@@ -1,0 +1,167 @@
+/* Tokens del DESIGN.md (Nexis Compute). Self-contained, sin CDN. */
+:root {
+  --primary: #2DD4BF;
+  --accent: #14B8A6;
+  --bg: #030108;
+  --surface: #191C21;
+  --text: #FFFFFF;
+  --text-2: #A1A1AA;
+  --border: #27272A;
+
+  --r-card: 8px;
+  --r-control: 8px;
+  --r-pill: 9999px;
+
+  --sp: 8px;
+  --gap: 16px;
+  --card-pad: 24px;
+  --section-pad: 80px;
+
+  /* fuentes del diseño primero, luego fallback local — sin descargar nada */
+  --font-body: 'Inter', system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SFMono-Regular', Menlo, monospace;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font-body);
+  font-size: 16px;
+  line-height: 1.6;
+}
+
+a { color: var(--primary); text-decoration: none; }
+a:hover { text-decoration: underline; }
+
+/* Cáscara */
+.nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--gap) clamp(16px, 5vw, var(--section-pad));
+  border-bottom: 1px solid var(--border);
+}
+.nav__brand { font-weight: 600; font-size: 18px; letter-spacing: .02em; }
+.nav__brand a { color: var(--text); }
+.nav__actions { display: flex; gap: var(--sp); align-items: center; }
+.nav__email { color: var(--text-2); font-family: var(--font-mono); font-size: 12px; }
+
+.container {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: clamp(24px, 6vw, var(--section-pad)) clamp(16px, 5vw, 40px);
+}
+
+/* Etiqueta técnica (mono, mayúsculas) */
+.label {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--primary);
+}
+
+/* Hero */
+.hero__title {
+  font-size: clamp(40px, 8vw, 64px);
+  font-weight: 500;
+  line-height: 1.04;
+  letter-spacing: 0;
+  margin: var(--gap) 0;
+}
+.hero__sub { color: var(--text-2); font-size: 18px; max-width: 60ch; }
+.hero__cta { display: flex; gap: var(--gap); margin-top: 32px; flex-wrap: wrap; }
+
+/* Botones */
+.btn {
+  display: inline-block;
+  padding: 12px 24px;
+  border-radius: var(--r-control);
+  border: 1px solid transparent;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+}
+.btn:hover { text-decoration: none; }
+.btn--primary { background: var(--primary); color: var(--bg); }
+.btn--primary:hover { background: var(--accent); }
+.btn--ghost { background: transparent; border-color: var(--border); color: var(--text); }
+.btn--ghost:hover { border-color: var(--primary); }
+
+/* Cards / bento */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: var(--gap);
+  margin-top: 48px;
+}
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r-card);
+  padding: var(--card-pad);
+}
+.card h3 { margin: 8px 0; font-size: 18px; font-weight: 600; }
+.card p { color: var(--text-2); margin: 0; }
+
+/* Card de auth (centrada, angosta) */
+.auth-card { max-width: 420px; margin: 0 auto; }
+.auth-card h1 { font-size: 28px; font-weight: 500; margin-top: 0; }
+
+/* Formularios */
+.field { margin-bottom: var(--gap); }
+.field label { display: block; margin-bottom: 6px; color: var(--text-2); font-size: 14px; }
+input[type="email"], input[type="password"], input[type="text"] {
+  width: 100%;
+  padding: 10px 12px;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--r-control);
+  color: var(--text);
+  font: inherit;
+}
+input:focus { outline: none; border-color: var(--primary); }
+input[type="submit"], button[type="submit"] {
+  width: 100%;
+  padding: 12px;
+  background: var(--primary);
+  color: var(--bg);
+  border: none;
+  border-radius: var(--r-control);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+input[type="submit"]:hover, button[type="submit"]:hover { background: var(--accent); }
+.field .error, form span { color: #F87171; font-size: 13px; }
+
+.muted { color: var(--text-2); }
+.links { margin-top: var(--gap); font-size: 14px; }
+
+/* Flash */
+.flash {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 var(--gap);
+}
+.flash li {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--r-control);
+  padding: 12px 16px;
+  margin-bottom: 8px;
+}
+
+/* Estado vacío del dashboard */
+.empty {
+  text-align: center;
+  padding: 64px var(--card-pad);
+  color: var(--text-2);
+}
