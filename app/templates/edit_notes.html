@@ -25,7 +25,7 @@
   <a class="links" href="{{ url_for('main.score_view', score_id=score.id) }}">← Partitura</a>
 </div>
 
-<div id="editor" style="display:flex; height:66vh; border:1px solid var(--border);
+<div id="editor" style="display:flex; border:1px solid var(--border);
      border-radius:8px; overflow:hidden; background:#0e1013">
   <div id="keys" style="width:56px; flex:none; overflow:hidden; background:#15181c;
        border-right:1px solid var(--border)"></div>
@@ -36,8 +36,10 @@
 </div>
 
 <style>
+  /* Altura por CSS (no inline) para que la regla de fullscreen pueda ganarle. */
+  #editor { height: 66vh; }
   #editor-wrap:fullscreen { background: var(--bg); padding: 14px; }
-  #editor-wrap:fullscreen #editor { height: calc(100vh - 70px); }
+  #editor-wrap:fullscreen #editor { height: calc(100vh - 74px); }
 </style>
 {% endblock %}
 
@@ -72,8 +74,8 @@
       PLO = Math.max(PABS_MIN, lo - 4); PHI = Math.min(PABS_MAX, hi + 4);
     } else { PLO = 48; PHI = 84; }
     ROWS = PHI - PLO + 1;
-    const avail = notesEl.clientHeight || 500;   // alto para que el rango entre completo en Y
-    ROW = Math.max(7, Math.min(26, Math.floor(avail / ROWS)));
+    const avail = notesEl.clientHeight || 500;   // llenar toda la altura visible con el rango
+    ROW = Math.max(7, Math.floor(avail / ROWS));  // sin tope: el grid ocupa todo el eje Y
     GRIDH = ROWS * ROW;
   }
 
