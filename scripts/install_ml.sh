@@ -19,9 +19,10 @@ $PIP install demucs
 # Cola de jobs
 $PIP install "rq==2.6.0"
 
-# yt-dlp pineado. IMPORTANTE (§6.8): actualizarlo seguido — cambia por los extractors de
-# YouTube/IG/TikTok y acumula CVEs si queda viejo.  pip install -U yt-dlp
-$PIP install "yt-dlp==2025.6.9"
+# yt-dlp pineado. IMPORTANTE (§6.8): actualizarlo seguido — YouTube cambia el player cada
+# pocas semanas y un yt-dlp viejo se rompe ("Requested format is not available") y acumula
+# CVEs. Actualizá con:  pip install -U yt-dlp
+$PIP install "yt-dlp==2026.7.4"
 
 echo "ML deps instaladas. Inferencia: ONNX. Separación: Demucs/torch CPU."
 
