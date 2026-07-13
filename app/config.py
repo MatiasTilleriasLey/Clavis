@@ -8,6 +8,9 @@ class Config:
     SQLALCHEMY_DATABASE_URI = os.environ["DATABASE_URL"]
     REDIS_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
 
+    # Rate limiter persistido en Redis (threat model §6.19).
+    RATELIMIT_STORAGE_URI = REDIS_URL
+
     # DEBUG nunca on por accidente: solo si FLASK_DEBUG=1 explícito.
     DEBUG = os.environ.get("FLASK_DEBUG") == "1"
 

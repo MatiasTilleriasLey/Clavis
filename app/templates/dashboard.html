@@ -1,0 +1,9 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Dashboard</h1>
+<p>Hola, {{ current_user.email }}.</p>
+<form method="post" action="{{ url_for('auth.logout') }}">
+  <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  <button type="submit">Salir</button>
+</form>
+{% endblock %}
