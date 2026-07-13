@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}{{ score.title }} — Piano · Clavis{% endblock %}
+{% block content %}
+<span class="label">Modo piano (tutorial)</span>
+<h1 class="hero__title" style="font-size:28px">{{ score.title }}</h1>
+<p class="muted" style="font-size:13px">
+  Dale play: las notas caen sobre el teclado marcando qué tecla tocar, sincronizadas con el audio.
+</p>
+
+<div class="card" style="padding:12px">
+  <midi-player src="{{ url_for('main.score_midi', score_id=score.id) }}"
+               sound-font="{{ url_for('static', filename='soundfont') }}"
+               visualizer="#vis" style="width:100%; display:block"></midi-player>
+</div>
+
+<div style="background:#0b0d10; border:1px solid var(--border); border-radius:8px; margin-top:12px;
+            height:60vh; overflow:hidden">
+  <midi-visualizer type="waterfall" id="vis"
+                   src="{{ url_for('main.score_midi', score_id=score.id) }}"
+                   style="width:100%; height:100%"></midi-visualizer>
+</div>
+
+<p class="links" style="margin-top:12px">
+  <a href="{{ url_for('main.score_view', score_id=score.id) }}">← Ver la partitura</a>
+</p>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/midi-player.min.js') }}"></script>
+{% endblock %}

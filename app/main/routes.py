@@ -132,6 +132,15 @@ def score_view(score_id):
     return render_template("score.html", score=score)
 
 
+@bp.get("/score/<int:score_id>/play")
+@login_required
+def score_play(score_id):
+    score = _owned_score(score_id)
+    if not score.has_midi:
+        abort(404)
+    return render_template("play.html", score=score)  # vista tipo Synthesia (pestaña nueva)
+
+
 @bp.get("/score/<int:score_id>/musicxml")
 @login_required
 def score_musicxml(score_id):

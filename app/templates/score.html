@@ -16,6 +16,13 @@
   · <a href="{{ url_for('main.score_musicxml', score_id=score.id) }}">MusicXML</a>
   {% if score.has_midi %} · <a href="{{ url_for('main.score_midi', score_id=score.id) }}">MIDI</a>{% endif %}
 </p>
+{% if score.has_midi %}
+<p style="margin:0 0 16px">
+  <a class="btn btn--primary" href="{{ url_for('main.score_play', score_id=score.id) }}" target="_blank">
+    ▶ Modo piano (tutorial) — pestaña nueva
+  </a>
+</p>
+{% endif %}
 
 {% if score.has_midi %}
 <div class="card" style="margin-bottom:16px">
