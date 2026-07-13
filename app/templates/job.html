@@ -17,7 +17,7 @@
 <script>
   (function () {
     var url = {{ url_for('main.job_status', job_id=job.id) | tojson }};
-    var labels = {queued:'En cola…', started:'Transcribiendo…', failed:'Falló la transcripción.',
+    var labels = {queued:'En cola…', started:'Procesando…', failed:'Falló la transcripción.',
                   canceled:'Cancelado.'};
     var el = document.getElementById('state');
     function poll() {
@@ -27,7 +27,8 @@
             window.location = '/score/' + d.score_id;
             return;
           }
-          el.textContent = labels[d.status] || d.status;
+          // Mostrar la etapa concreta (descargando / separando / transcribiendo …) si la hay.
+          el.textContent = (d.status === 'started' && d.stage) ? d.stage : (labels[d.status] || d.status);
           if (d.status === 'queued' || d.status === 'started') setTimeout(poll, 2000);
         }).catch(function () { setTimeout(poll, 3000); });
     }

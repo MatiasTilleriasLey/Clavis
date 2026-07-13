@@ -107,7 +107,7 @@ def job_view(job_id):
 @verified_required
 def job_status(job_id):
     job = _owned_job(job_id)
-    return {"status": job.status, "score_id": job.score_id}
+    return {"status": job.status, "stage": job.stage, "score_id": job.score_id}
 
 
 @bp.post("/job/<int:job_id>/cancel")

@@ -160,8 +160,11 @@ def unverified():
 @bp.get("/dashboard")
 @verified_required
 def dashboard():
-    from ..models import Score
-    # Listado filtrado server-side por el usuario de la sesión (nunca todo + filtro en front, §4.8).
+    from ..models import Job, Score
+    # Listados filtrados server-side por el usuario de la sesión (§4.8).
     scores = (Score.query.filter_by(user_id=current_user.id)
               .order_by(Score.created_at.desc()).all())
-    return render_template("dashboard.html", scores=scores)
+    jobs = (Job.query.filter_by(user_id=current_user.id)
+            .filter(Job.status.in_(("queued", "started", "failed")))
+            .order_by(Job.created_at.desc()).all())
+    return render_template("dashboard.html", scores=scores, jobs=jobs)

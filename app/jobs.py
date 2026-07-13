@@ -69,8 +69,9 @@ def ingest_job(job_id, url, work_dir, user_id, title, stems=None):
 
     def work(app):
         from .ingest import HARD_CAP_SECONDS, download_audio
+        _stage(job_id, "descargando audio")
         audio_path = download_audio(url, work_dir, HARD_CAP_SECONDS)
-        return _transcribe_and_store(audio_path, work_dir, user_id, title, stems, app)
+        return _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, stems, app)
 
     if has_app_context():
         app = current_app._get_current_object()
@@ -133,9 +134,19 @@ def _transcribe_one(wav, out_dir, instrument, title, user_id, app):
     return score
 
 
-def _transcribe_and_store(audio_path, work_dir, user_id, title, stems, app):
+def _stage(job_id, text):
+    """Actualiza la fase visible del job (progreso para el frontend)."""
+    from .models import Job
+    job = db.session.get(Job, job_id)
+    if job is not None:
+        job.stage = text
+        db.session.commit()
+
+
+def _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, stems, app):
     """Mezcla o stems -> uno o varios Score. Devuelve la lista (ya en la sesión, commiteada)."""
     if stems:
+        _stage(job_id, "separando instrumentos")
         stem_paths = separate_stems(audio_path, work_dir, stems)  # {instrumento: wav}
         if not stem_paths:
             raise RuntimeError("sin stems")
@@ -145,6 +156,7 @@ def _transcribe_and_store(audio_path, work_dir, user_id, title, stems, app):
 
     scores = []
     for instrument, wav in units:
+        _stage(job_id, f"transcribiendo {instrument}")
         out_dir = os.path.join(work_dir, f"out_{instrument}")
         os.makedirs(out_dir, exist_ok=True)
         scores.append(_transcribe_one(wav, out_dir, instrument, title, user_id, app))
@@ -186,4 +198,4 @@ def _execute(job_id, work_dir, app, produce_scores):
 
 def _run(job_id, audio_path, work_dir, user_id, title, stems, app):
     _execute(job_id, work_dir, app,
-             lambda: _transcribe_and_store(audio_path, work_dir, user_id, title, stems, app))
+             lambda: _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, stems, app))

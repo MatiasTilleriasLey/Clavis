@@ -60,6 +60,30 @@
   </form>
 </div>
 
+{% if jobs %}
+<div class="card" style="margin-bottom:16px">
+  <span class="label">En proceso</span>
+  <ul id="jobs" style="list-style:none; padding:0; margin:10px 0 0">
+    {% for j in jobs %}
+    <li data-job="{{ j.id }}"
+        style="border-top:1px solid var(--border); padding:10px 0; display:flex;
+               justify-content:space-between; gap:12px; align-items:center">
+      <span>
+        <a href="{{ url_for('main.job_view', job_id=j.id) }}">Trabajo #{{ j.id }}</a>
+        <span class="muted js-state"> · {{ j.stage or j.status }}</span>
+      </span>
+      {% if j.status in ('queued', 'started') %}
+      <form method="post" action="{{ url_for('main.job_cancel', job_id=j.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn--ghost">Cancelar</button>
+      </form>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
 {% if scores %}
   <div class="grid">
     {% for s in scores %}
@@ -83,5 +107,37 @@
     <p>Todavía no tenés partituras.</p>
     <p class="muted">Subí un audio para generar la primera.</p>
   </div></div>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+{% if jobs %}
+<script>
+  // Actualiza en vivo el estado/etapa de cada job en proceso. Recarga cuando uno termina
+  // (para que aparezca su partitura y se caiga de la lista).
+  (function () {
+    var rows = Array.prototype.slice.call(document.querySelectorAll('#jobs li[data-job]'));
+    function poll() {
+      var active = false, done = false, pending = rows.length;
+      rows.forEach(function (li) {
+        fetch('/job/' + li.getAttribute('data-job') + '/status', {headers: {'Accept': 'application/json'}})
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            li.querySelector('.js-state').textContent = ' · ' + (d.stage || d.status);
+            if (d.status === 'finished') done = true;
+            if (d.status === 'queued' || d.status === 'started') active = true;
+          })
+          .catch(function () { active = true; })
+          .finally(function () {
+            if (--pending === 0) {
+              if (done) location.reload();
+              else if (active) setTimeout(poll, 2500);
+            }
+          });
+      });
+    }
+    poll();
+  })();
+</script>
 {% endif %}
 {% endblock %}
