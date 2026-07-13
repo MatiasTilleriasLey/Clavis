@@ -120,10 +120,22 @@
     el.addEventListener('dblclick', e => { e.stopPropagation(); removeNote(n, el); });
     n.el = el; return el;
   }
+  function gridBg() {
+    // líneas verticales según la grilla + beat (negra) + compás (4/4), y octavas horizontales
+    const beatPx = (60 / tempo) * PPS;
+    const d = parseInt(document.getElementById('grid-div').value, 10);
+    const subPx = d ? beatPx / d : 0;
+    const vline = (px, color) =>
+      'repeating-linear-gradient(90deg,' + color + ' 0,' + color + ' 1px,transparent 1px,transparent ' + px + 'px)';
+    const layers = [vline(beatPx * 4, '#3a3f47'), vline(beatPx, '#262a30')];   // compás, beat
+    if (subPx >= 4) layers.push(vline(subPx, '#20242a'));                       // subdivisión
+    layers.push('repeating-linear-gradient(0deg,#181b1f 0,#181b1f 1px,transparent 1px,transparent ' + (ROW * 12) + 'px)');
+    return layers.join(',');
+  }
+
   function render() {
     grid.style.width = width + 'px'; grid.style.height = GRIDH + 'px';
-    grid.style.backgroundImage =
-      'repeating-linear-gradient(0deg,#181b1f 0,#181b1f 1px,transparent 1px,transparent ' + (ROW * 12) + 'px)';
+    grid.style.backgroundImage = gridBg();
     grid.innerHTML = '';
     notes.forEach(n => grid.appendChild(noteEl(n)));
     ruler.style.width = width + 'px'; grid.appendChild(ruler);
@@ -164,6 +176,7 @@
   });
   window.addEventListener('mouseup', () => { if (drag) { drag = null; document.body.style.userSelect = ''; dirty(); } });
   notesEl.addEventListener('scroll', () => { keysEl.scrollTop = notesEl.scrollTop; });
+  document.getElementById('grid-div').addEventListener('change', () => { grid.style.backgroundImage = gridBg(); });
 
   // --- reproducción con posición (pausa/reanuda, seek con la regla, reiniciar) ---
   let sfp = null, playing = false, raf = 0;
