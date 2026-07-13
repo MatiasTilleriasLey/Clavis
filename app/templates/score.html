@@ -17,6 +17,16 @@
   {% if score.has_midi %} · <a href="{{ url_for('main.score_midi', score_id=score.id) }}">MIDI</a>{% endif %}
 </p>
 
+{% if score.has_midi %}
+<div class="card" style="margin-bottom:16px">
+  <span class="label">Escuchar</span>
+  <p class="muted" style="font-size:13px; margin:8px 0">
+    Reproducción sintetizada para revisar cómo quedó la transcripción.</p>
+  <midi-player src="{{ url_for('main.score_midi', score_id=score.id) }}"
+               style="width:100%; display:block"></midi-player>
+</div>
+{% endif %}
+
 <div class="card" style="background:#fff; overflow-x:auto; margin-bottom:16px">
   <div id="osmd"></div>
 </div>
@@ -38,6 +48,9 @@
 {% endblock %}
 
 {% block scripts %}
+{% if score.has_midi %}
+<script src="{{ url_for('static', filename='js/midi-player.min.js') }}"></script>
+{% endif %}
 <script src="{{ url_for('static', filename='js/opensheetmusicdisplay.min.js') }}"></script>
 <script>
   (function () {
