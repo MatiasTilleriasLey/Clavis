@@ -1,0 +1,22 @@
+# Secrets — NUNCA committear (threat model §8)
+.env
+*.pem
+*.key
+certs/
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# Almacenamiento de partituras y temporales del pipeline
+storage/
+instance/
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/

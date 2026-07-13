@@ -1,0 +1,26 @@
+# Solo Postgres + Redis para dev. Flask corre local en venv.
+# ponytail: la app no va en compose todavía — se agrega cuando haya algo que dockerizar de verdad.
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: clavis
+      POSTGRES_PASSWORD: clavis
+      POSTGRES_DB: clavis
+    ports:
+      - "127.0.0.1:5432:5432"   # bind solo a localhost (threat model §6.1)
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clavis"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "127.0.0.1:6379:6379"
+
+volumes:
+  pgdata:
