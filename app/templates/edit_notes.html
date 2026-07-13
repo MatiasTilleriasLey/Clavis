@@ -22,6 +22,9 @@
       <option value="4" selected>Semicorchea</option><option value="0">Libre</option>
     </select>
   </label>
+  <button id="quantize" class="btn btn--ghost" title="Ajustar todas las notas a la celda más cercana">
+    ⊹ Ajustar a la grilla
+  </button>
   <span id="status" class="muted" style="font-size:13px"></span>
   <a class="links" href="{{ url_for('main.score_view', score_id=score.id) }}">← Partitura</a>
 </div>
@@ -177,6 +180,20 @@
   window.addEventListener('mouseup', () => { if (drag) { drag = null; document.body.style.userSelect = ''; dirty(); } });
   notesEl.addEventListener('scroll', () => { keysEl.scrollTop = notesEl.scrollTop; });
   document.getElementById('grid-div').addEventListener('change', () => { grid.style.backgroundImage = gridBg(); });
+
+  // cuantizar: ajusta el inicio y fin de todas las notas a la celda más cercana (corrige desfases)
+  document.getElementById('quantize').addEventListener('click', () => {
+    const s = step();
+    if (!s) { statusEl.textContent = 'elegí una grilla (no "Libre") para ajustar'; return; }
+    notes.forEach(n => {
+      const st = Math.round(n.start / s) * s;
+      let en = Math.round(n.end / s) * s;
+      if (en <= st) en = st + s;          // mínimo una celda de duración
+      n.start = st; n.end = en;
+      if (n.el) place(n.el, n);
+    });
+    dirty(); statusEl.textContent = 'notas ajustadas a la grilla';
+  });
 
   // --- reproducción con posición (pausa/reanuda, seek con la regla, reiniciar) ---
   let sfp = null, playing = false, raf = 0;
