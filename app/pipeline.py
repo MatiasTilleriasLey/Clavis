@@ -81,6 +81,36 @@ def _consolidate_midi(midi_path, bpm=None):
     out.write(midi_path)
 
 
+def midi_notes(midi_path):
+    """Lee el MIDI y devuelve {tempo, notes:[{pitch,start,end,velocity}]} para el editor."""
+    import pretty_midi
+    pm = pretty_midi.PrettyMIDI(midi_path)
+    tempo = 120.0
+    try:
+        _, tempi = pm.get_tempo_changes()
+        tempo = float(tempi[0]) if len(tempi) else 120.0
+    except Exception:
+        pass
+    notes = [{"pitch": n.pitch, "start": round(n.start, 4), "end": round(n.end, 4),
+              "velocity": n.velocity}
+             for inst in pm.instruments for n in inst.notes]
+    notes.sort(key=lambda n: (n["start"], n["pitch"]))
+    return {"tempo": tempo, "notes": notes}
+
+
+def notes_to_midi(notes, tempo, midi_path):
+    """Escribe una pista de piano desde la lista de notas editada en el editor."""
+    import pretty_midi
+    pm = pretty_midi.PrettyMIDI(initial_tempo=float(tempo) or 120.0)
+    ins = pretty_midi.Instrument(program=0, name="Piano")
+    for n in notes:
+        ins.notes.append(pretty_midi.Note(
+            velocity=int(n["velocity"]), pitch=int(n["pitch"]),
+            start=float(n["start"]), end=float(n["end"])))
+    pm.instruments.append(ins)
+    pm.write(midi_path)
+
+
 def midi_to_score(src_midi, work_dir, title="", mscore_bin=None):
     """MIDI subido por el usuario -> (musicxml, pdf). Igual que transcribe() pero sin el paso
     audio->MIDI: consolida a piano y MuseScore genera la notación. Deja notes.mid en work_dir."""

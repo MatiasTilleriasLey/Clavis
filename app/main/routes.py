@@ -2,7 +2,7 @@ import os
 import tempfile
 import uuid
 
-from flask import (Blueprint, abort, current_app, flash, redirect,
+from flask import (Blueprint, abort, current_app, flash, jsonify, redirect,
                    render_template, request, send_file, url_for)
 from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
@@ -214,6 +214,69 @@ def score_edit(score_id):
     db.session.commit()
     flash("Partitura actualizada.")
     return redirect(url_for("main.score_view", score_id=score.id))
+
+
+@bp.get("/score/<int:score_id>/edit")
+@login_required
+def score_edit_notes(score_id):
+    score = _owned_score(score_id)
+    if not score.has_midi:
+        abort(404)
+    return render_template("edit_notes.html", score=score)
+
+
+@bp.get("/score/<int:score_id>/notes")
+@login_required
+def score_notes(score_id):
+    score = _owned_score(score_id)
+    path = storage.path_for(current_user.id, score.stored_uuid, "mid")
+    if not score.has_midi or not os.path.exists(path):
+        abort(404)
+    from ..pipeline import midi_notes
+    return jsonify(midi_notes(path))
+
+
+@bp.post("/score/<int:score_id>/notes")
+@login_required
+def score_save_notes(score_id):
+    score = _owned_score(score_id)
+    data = request.get_json(silent=True) or {}
+    raw = data.get("notes")
+    if not isinstance(raw, list) or len(raw) > 50000:  # cap defensivo
+        abort(400)
+    tempo = float(data.get("tempo") or 120.0)
+    tempo = tempo if 20 <= tempo <= 400 else 120.0
+
+    notes = []
+    for n in raw:  # validar rangos; el resto se descarta
+        try:
+            p, s, e, v = int(n["pitch"]), float(n["start"]), float(n["end"]), int(n["velocity"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if 0 <= p <= 127 and s >= 0 and 0 < e - s <= 60 and 1 <= v <= 127:
+            notes.append({"pitch": p, "start": s, "end": e, "velocity": v})
+
+    import shutil
+    from ..pipeline import midi_to_score, notes_to_midi
+    work = tempfile.mkdtemp(prefix="clavis_")
+    try:
+        src = os.path.join(work, "edit.mid")
+        notes_to_midi(notes, tempo, src)
+        mscore = current_app.config.get("MSCORE_BIN")
+        xml, pdf = midi_to_score(src, work, title=score.title, mscore_bin=mscore)
+        midi = os.path.join(work, "notes.mid")
+        has_pdf = bool(pdf) and os.path.exists(pdf)
+        storage.save(current_user.id, score.stored_uuid, xml,
+                     pdf if has_pdf else None, midi if os.path.exists(midi) else None)
+        score.has_pdf = has_pdf
+        score.has_midi = os.path.exists(midi)
+        db.session.commit()
+    except Exception:
+        current_app.logger.warning("guardar notas editadas falló", exc_info=True)
+        return jsonify({"ok": False}), 500
+    finally:
+        shutil.rmtree(work, ignore_errors=True)
+    return jsonify({"ok": True})
 
 
 @bp.get("/admin")
