@@ -22,10 +22,10 @@ class TestConfig(Config):
     SESSION_COOKIE_SECURE = False          # el test client habla http, no TLS
 
 
-def _token_from_outbox(outbox):
+def _token_from_outbox(outbox, path="verify"):
     assert len(outbox) == 1, f"esperaba 1 mail, hubo {len(outbox)}"
-    m = re.search(r"/verify/(\S+)", outbox[0].body)
-    assert m, "el mail no contiene link de verificación"
+    m = re.search(rf"/{path}/(\S+)", outbox[0].body)
+    assert m, f"el mail no contiene link de {path}"
     return m.group(1)
 
 
@@ -77,7 +77,38 @@ def run():
     r = app.test_client().get("/dashboard")
     assert r.status_code == 302 and "/login" in r.headers["Location"]
 
-    print("OK: flujo de auth verificado (7 aserciones de seguridad)")
+    # --- Reseteo de contraseña (paso 3) ---
+    anon = app.test_client()  # sin sesión: forgot-password redirige si estás logueado
+    # 9. forgot-password de email existente => manda 1 mail con token de reset.
+    with mail.record_messages() as outbox:
+        anon.post("/forgot-password", data={"email": "a@x.com"})
+    reset_token = _token_from_outbox(outbox, "reset-password")
+
+    # 10. Anti-enumeración: email inexistente responde igual y NO manda mail.
+    with mail.record_messages() as outbox:
+        anon.post("/forgot-password", data={"email": "nadie@x.com"})
+    assert len(outbox) == 0, "reveló que el email no existía (mandó mail)"
+
+    # 11. Reset con token válido => cambia la contraseña.
+    c = app.test_client()
+    r = c.post(f"/reset-password/{reset_token}", data={"password": "nuevaclave9"},
+               follow_redirects=True)
+    assert b"actualizada" in r.data, "el reset no confirmó"
+
+    # 12. Token de reset de un solo uso: reusarlo falla.
+    r = c.post(f"/reset-password/{reset_token}", data={"password": "otra12345"},
+               follow_redirects=True)
+    assert b"inv\xc3\xa1lido o expirado" in r.data, "el token de reset se reusó"
+
+    # 13. La contraseña vieja ya no sirve; la nueva sí.
+    r = c.post("/login", data={"email": "a@x.com", "password": "clave1234"},
+               follow_redirects=True)
+    assert b"Dashboard" not in r.data, "la contraseña vieja siguió sirviendo"
+    r = c.post("/login", data={"email": "a@x.com", "password": "nuevaclave9"},
+               follow_redirects=True)
+    assert b"Dashboard" in r.data, "la contraseña nueva no sirvió"
+
+    print("OK: flujo de auth + reset verificado (12 aserciones de seguridad)")
 
 
 if __name__ == "__main__":

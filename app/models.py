@@ -67,6 +67,11 @@ class EmailToken(db.Model):
         return token
 
     @classmethod
+    def invalidate_pending(cls, user_id, purpose):
+        """Marca usados todos los tokens sin usar de ese propósito (ej. al resetear password)."""
+        cls.query.filter_by(user_id=user_id, purpose=purpose, used_at=None).update({"used_at": _now()})
+
+    @classmethod
     def consume(cls, token, purpose):
         """Valida y marca usado en un solo paso. Devuelve el User o None si inválido/expirado/usado."""
         row = cls.query.filter_by(token_hash=cls._hash(token), purpose=purpose, used_at=None).first()

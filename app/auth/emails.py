@@ -4,6 +4,7 @@ from flask_mail import Message
 from ..extensions import mail
 
 VERIFY_TTL_MINUTES = 24 * 60  # 24h para verificación de registro
+RESET_TTL_MINUTES = 60        # expiración corta para reseteo (threat model §6.30)
 
 
 def send_verification_email(user, token):
@@ -16,4 +17,15 @@ def send_verification_email(user, token):
     )
     # ponytail: cuerpo de texto plano sin datos controlados por el usuario => sin riesgo
     # de header injection (threat model §6.32). Si se agrega el nombre, sanitizar acá.
+    mail.send(msg)
+
+
+def send_reset_email(user, token):
+    link = url_for("auth.reset_password", token=token, _external=True)
+    msg = Message(
+        subject="Reseteo de contraseña de Clavis",
+        recipients=[user.email],
+        body=(f"Pediste resetear tu contraseña. Entrá a este link (válido 1h, un solo uso):\n\n"
+              f"{link}\n\nSi no fuiste vos, ignorá este mail.\n"),
+    )
     mail.send(msg)

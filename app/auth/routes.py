@@ -7,13 +7,21 @@ from flask_login import (current_user, login_required, login_user,
 
 from ..extensions import db, limiter
 from ..models import EmailToken, User
-from .emails import VERIFY_TTL_MINUTES, send_verification_email
-from .forms import LoginForm, RegisterForm
+from .emails import (RESET_TTL_MINUTES, VERIFY_TTL_MINUTES, send_reset_email,
+                     send_verification_email)
+from .forms import (ForgotPasswordForm, LoginForm, RegisterForm,
+                    ResetPasswordForm)
 
 bp = Blueprint("auth", __name__)
 
 # Mensaje uniforme para registro: idéntico exista o no el email (anti-enumeración, §6.24).
 _REGISTER_MSG = "Si el email es válido, te enviamos un link de verificación. Revisá tu correo."
+_FORGOT_MSG = "Si el email está registrado, te enviamos un link para resetear tu contraseña."
+
+
+def _target_email():
+    """Key para rate limiting por email destino, normalizado (threat model §6.31)."""
+    return (request.form.get("email") or "").strip().lower()
 
 
 def verified_required(view):
@@ -89,6 +97,45 @@ def verify(token):
     db.session.commit()
     flash("Cuenta verificada. Ya podés entrar.")
     return redirect(url_for("auth.login"))
+
+
+@bp.route("/forgot-password", methods=["GET", "POST"])
+@limiter.limit("5 per hour", methods=["POST"])                          # por IP
+@limiter.limit("3 per hour", methods=["POST"], key_func=_target_email)  # por email destino (§6.31)
+def forgot_password():
+    if current_user.is_authenticated:
+        return redirect(url_for("auth.dashboard"))
+    form = ForgotPasswordForm()
+    if form.validate_on_submit():
+        email = form.email.data.strip().lower()
+        user = User.query.filter_by(email=email).first()
+        if user is not None:
+            token = EmailToken.issue(user, "reset", RESET_TTL_MINUTES)
+            db.session.commit()
+            send_reset_email(user, token)
+        flash(_FORGOT_MSG)  # respuesta uniforme exista o no el email (§6.24)
+        return redirect(url_for("auth.login"))
+    return render_template("auth/forgot_password.html", form=form)
+
+
+@bp.route("/reset-password/<token>", methods=["GET", "POST"])
+@limiter.limit("10 per hour", methods=["POST"])
+def reset_password(token):
+    if current_user.is_authenticated:
+        return redirect(url_for("auth.dashboard"))
+    form = ResetPasswordForm()
+    if form.validate_on_submit():
+        # El token se valida y consume (un solo uso) recién al enviar la nueva contraseña.
+        user = EmailToken.consume(token, "reset")
+        if user is None:
+            flash("Link de reseteo inválido o expirado.")
+            return redirect(url_for("auth.forgot_password"))
+        user.set_password(form.password.data)
+        EmailToken.invalidate_pending(user.id, "reset")  # anula otros links de reset pendientes
+        db.session.commit()
+        flash("Contraseña actualizada. Ya podés entrar.")
+        return redirect(url_for("auth.login"))
+    return render_template("auth/reset_password.html", form=form, token=token)
 
 
 @bp.get("/unverified")
