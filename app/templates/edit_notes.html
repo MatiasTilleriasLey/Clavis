@@ -6,8 +6,9 @@
 <h1 class="hero__title" style="font-size:26px">{{ score.title }}</h1>
 <p class="muted" style="font-size:13px; margin:4px 0 12px">
   Click en un espacio vacío para agregar una nota · arrastrá para mover · arrastrá el borde
-  derecho para alargar · doble-click para borrar. Al guardar se regenera la partitura, el audio
-  y el modo piano.
+  derecho para alargar · doble-click para borrar · <strong>Shift+arrastrar</strong> para
+  seleccionar un área (después "Ajustar a la grilla" o Supr afectan solo lo seleccionado).
+  Al guardar se regenera la partitura, el audio y el modo piano.
 </p>
 
 <div id="editor-wrap">
@@ -19,7 +20,8 @@
   <label class="muted" style="font-size:13px">Grilla:
     <select id="grid-div" style="width:auto; display:inline-block; padding:4px 8px">
       <option value="1">Negra</option><option value="2">Corchea</option>
-      <option value="4" selected>Semicorchea</option><option value="0">Libre</option>
+      <option value="4" selected>Semicorchea</option><option value="8">Fusa</option>
+      <option value="16">Semifusa</option><option value="0">Libre</option>
     </select>
   </label>
   <button id="quantize" class="btn btn--ghost" title="Ajustar todas las notas a la celda más cercana">
@@ -60,6 +62,7 @@
   const BLACK = {1:1,3:1,6:1,8:1,10:1};
   let tempo = 120, notes = [], width = 2000;
   let PLO = 48, PHI = 84, ROW = 14, ROWS = 37, GRIDH = 518;   // rango/tamaño dinámicos
+  const selection = new Set();   // notas seleccionadas (Shift+arrastrar) para cuantizar/borrar
 
   // cabezal (siempre visible, marca la posición de reproducción) + regla clickeable (seek)
   const playhead = document.createElement('div');
@@ -119,9 +122,15 @@
     el.style.cssText = 'position:absolute;background:#2DD4BF;border:1px solid #0f766e;' +
       'border-radius:2px;box-sizing:border-box;cursor:grab';
     place(el, n);
+    if (selection.has(n)) el.style.outline = '2px solid #f59e0b';   // resaltar si está seleccionada
     el.addEventListener('mousedown', e => startDrag(e, n, el));
     el.addEventListener('dblclick', e => { e.stopPropagation(); removeNote(n, el); });
     n.el = el; return el;
+  }
+
+  function clearSelection() {
+    selection.forEach(n => { if (n.el) n.el.style.outline = ''; });
+    selection.clear();
   }
   function gridBg() {
     // líneas verticales según la grilla + beat (negra) + compás (4/4), y octavas horizontales
@@ -150,13 +159,46 @@
   function removeNote(n, el) { el.remove(); notes = notes.filter(x => x !== n); dirty(); }
   function dirty() { statusEl.textContent = 'sin guardar'; }
 
+  let selBox = null, selStart = null;
   grid.addEventListener('mousedown', e => {
-    if (e.target !== grid) return;                  // click en vacío => agregar
+    if (e.target !== grid) return;
     const r = grid.getBoundingClientRect();
-    const t = snap((e.clientX - r.left) / PPS), p = pOf(e.clientY - r.top);
+    const gx = e.clientX - r.left, gy = e.clientY - r.top;
+    if (e.shiftKey) {                               // Shift+arrastrar => seleccionar área
+      e.preventDefault(); clearSelection();
+      selStart = { x: gx, y: gy };
+      selBox = document.createElement('div');
+      selBox.style.cssText = 'position:absolute;border:1px solid #f59e0b;' +
+        'background:rgba(245,158,11,0.12);z-index:7;pointer-events:none';
+      grid.appendChild(selBox);
+      return;
+    }
+    clearSelection();                               // click normal => agregar nota
+    const t = snap(gx / PPS), p = pOf(gy);
     if (p < PLO || p > PHI) return;
     const n = { pitch: p, start: t, end: t + (step() || 0.25), velocity: 80 };
     notes.push(n); grid.insertBefore(noteEl(n), playhead); dirty();
+  });
+  window.addEventListener('mousemove', e => {
+    if (!selBox) return;
+    const r = grid.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    selBox.style.left = Math.min(x, selStart.x) + 'px';
+    selBox.style.top = Math.min(y, selStart.y) + 'px';
+    selBox.style.width = Math.abs(x - selStart.x) + 'px';
+    selBox.style.height = Math.abs(y - selStart.y) + 'px';
+  });
+  window.addEventListener('mouseup', e => {
+    if (!selBox) return;
+    const r = grid.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    const t0 = Math.min(x, selStart.x) / PPS, t1 = Math.max(x, selStart.x) / PPS;
+    const pHi = pOf(Math.min(y, selStart.y)), pLo = pOf(Math.max(y, selStart.y));
+    notes.forEach(n => {   // notas que solapan el área (tiempo y altura)
+      if (n.start < t1 && n.end > t0 && n.pitch >= pLo && n.pitch <= pHi) {
+        selection.add(n); if (n.el) n.el.style.outline = '2px solid #f59e0b';
+      }
+    });
+    selBox.remove(); selBox = null; selStart = null;
+    statusEl.textContent = selection.size ? (selection.size + ' notas seleccionadas') : '';
   });
 
   let drag = null;
@@ -185,14 +227,16 @@
   document.getElementById('quantize').addEventListener('click', () => {
     const s = step();
     if (!s) { statusEl.textContent = 'elegí una grilla (no "Libre") para ajustar'; return; }
-    notes.forEach(n => {
+    const target = selection.size ? notes.filter(n => selection.has(n)) : notes;   // área o todo
+    target.forEach(n => {
       const st = Math.round(n.start / s) * s;
       let en = Math.round(n.end / s) * s;
       if (en <= st) en = st + s;          // mínimo una celda de duración
       n.start = st; n.end = en;
       if (n.el) place(n.el, n);
     });
-    dirty(); statusEl.textContent = 'notas ajustadas a la grilla';
+    dirty();
+    statusEl.textContent = (selection.size ? selection.size + ' notas' : 'todas las notas') + ' ajustadas a la grilla';
   });
 
   // --- reproducción con posición (pausa/reanuda, seek con la regla, reiniciar) ---
@@ -259,9 +303,14 @@
 
   playBtn.addEventListener('click', startPlay);
   document.getElementById('rewind').addEventListener('click', () => seek(0));
-  document.addEventListener('keydown', e => {   // espacio = play / pausa
-    if (e.code === 'Space' && !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) {
-      e.preventDefault(); startPlay();
+  document.addEventListener('keydown', e => {
+    const inField = /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName);
+    if (e.code === 'Space' && !inField) { e.preventDefault(); startPlay(); }   // espacio = play/pausa
+    else if ((e.code === 'Delete' || e.code === 'Backspace') && !inField && selection.size) {
+      e.preventDefault();                          // Supr = borra el área seleccionada
+      selection.forEach(n => { if (n.el) n.el.remove(); });
+      notes = notes.filter(n => !selection.has(n));
+      selection.clear(); dirty(); statusEl.textContent = 'notas borradas';
     }
   });
 
