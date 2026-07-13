@@ -5,22 +5,35 @@
 <span class="label">Editor de notas</span>
 <h1 class="hero__title" style="font-size:26px">{{ score.title }}</h1>
 <p class="muted" style="font-size:13px; margin:4px 0 12px">
-  Click en un espacio vacío para agregar una nota · arrastrá para mover · arrastrá el borde
-  derecho para alargar · doble-click para borrar · <strong>Shift+arrastrar</strong> para
-  seleccionar un área (después "Ajustar a la grilla" o Supr afectan solo lo seleccionado).
-  Al guardar se regenera la partitura, el audio y el modo piano.
+  Click = agregar · arrastrá = mover · borde derecho = alargar · doble-click = borrar ·
+  click sobre una nota = seleccionarla (<strong>Ctrl+click</strong> suma/quita) ·
+  <strong>Shift+arrastrar</strong> = seleccionar área · <strong>Ctrl+rueda</strong> = zoom
+  (con Shift, vertical) · flechas mueven la selección. Al guardar se regenera la partitura,
+  el audio y el modo piano.
 </p>
 
 <div id="editor-wrap">
-<div style="display:flex; gap:12px; align-items:center; margin-bottom:10px; flex-wrap:wrap">
+<div class="tb">
   <button id="play" class="btn btn--ghost">▶ Reproducir</button>
-  <button id="rewind" class="btn btn--ghost" title="Volver al inicio">⏮ Desde el inicio</button>
+  <button id="rewind" class="btn btn--ghost" title="Volver al inicio">⏮ Inicio</button>
+  <button id="loop" class="btn btn--ghost" title="Repetir la selección (o rango) en bucle">⟲ Loop</button>
+  <button id="metro" class="btn btn--ghost" title="Metrónomo">🎵 Metrónomo</button>
+  <span class="sep"></span>
   <button id="undo" class="btn btn--ghost" title="Deshacer (Ctrl+Z)">↶ Deshacer</button>
-  <button id="select-all" class="btn btn--ghost" title="Seleccionar todas las notas (Ctrl+A)">Seleccionar todo</button>
+  <button id="redo" class="btn btn--ghost" title="Rehacer (Ctrl+Shift+Z)">↷ Rehacer</button>
+  <button id="copy" class="btn btn--ghost" title="Copiar (Ctrl+C)">⧉ Copiar</button>
+  <button id="paste" class="btn btn--ghost" title="Pegar en el cabezal (Ctrl+V)">📋 Pegar</button>
+  <button id="dup" class="btn btn--ghost" title="Duplicar (Ctrl+D)">⧉+ Duplicar</button>
+  <button id="select-all" class="btn btn--ghost" title="Seleccionar todo (Ctrl+A)">Sel. todo</button>
+  <span class="sep"></span>
   <button id="save" class="btn btn--primary">Guardar y regenerar</button>
   <button id="fs" class="btn btn--ghost">⛶ Pantalla completa</button>
-  <label class="muted" style="font-size:13px">Grilla:
-    <select id="grid-div" style="width:auto; display:inline-block; padding:4px 8px">
+  <span id="status" class="muted" style="font-size:13px"></span>
+  <a class="links" href="{{ url_for('main.score_view', score_id=score.id) }}">← Partitura</a>
+</div>
+<div class="tb tb--2">
+  <label class="muted">Grilla:
+    <select id="grid-div" style="width:auto;display:inline-block;padding:4px 8px">
       <option value="4">Redonda ○</option><option value="3">Blanca con puntillo</option>
       <option value="2">Blanca</option><option value="1.5">Negra con puntillo</option>
       <option value="1">Negra</option><option value="0.75">Corchea con puntillo</option>
@@ -29,28 +42,55 @@
       <option value="0.0625">Semifusa</option><option value="0">Libre</option>
     </select>
   </label>
-  <button id="quantize" class="btn btn--ghost" title="Ajustar todas las notas a la celda más cercana">
-    ⊹ Ajustar a la grilla
-  </button>
-  <span id="status" class="muted" style="font-size:13px"></span>
-  <a class="links" href="{{ url_for('main.score_view', score_id=score.id) }}">← Partitura</a>
+  <label class="muted">Nota nueva:
+    <select id="new-len" style="width:auto;display:inline-block;padding:4px 8px">
+      <option value="">= grilla</option><option value="4">Redonda</option>
+      <option value="2">Blanca</option><option value="1">Negra</option>
+      <option value="0.5">Corchea</option><option value="0.25">Semicorchea</option>
+    </select>
+  </label>
+  <button id="quantize" class="btn btn--ghost" title="Ajustar a la celda más cercana">⊹ Ajustar</button>
+  <button id="brush" class="btn btn--ghost" title="Modo pincel: pintá notas arrastrando">🖌 Pincel</button>
+  <span class="sep"></span>
+  <span class="muted">Zoom</span>
+  <button id="zoom-out" class="btn btn--ghost">−</button>
+  <button id="zoom-in" class="btn btn--ghost">+</button>
+  <span class="sep"></span>
+  <label class="muted">BPM <input id="bpm" type="number" min="20" max="400" step="1"
+         style="width:66px;display:inline-block;padding:4px 6px"></label>
+  <span class="sep"></span>
+  <span class="muted">Transponer</span>
+  <button id="tr-8d" class="btn btn--ghost" title="−1 octava">−8va</button>
+  <button id="tr-1d" class="btn btn--ghost">−1</button>
+  <button id="tr-1u" class="btn btn--ghost">+1</button>
+  <button id="tr-8u" class="btn btn--ghost" title="+1 octava">+8va</button>
 </div>
 
-<div id="editor" style="display:flex; border:1px solid var(--border);
-     border-radius:8px; overflow:hidden; background:#0e1013">
-  <div id="keys" style="width:56px; flex:none; overflow:hidden; background:#15181c;
+<div id="editor" style="display:flex;border:1px solid var(--border);
+     border-radius:8px;overflow:hidden;background:#0e1013">
+  <div id="keys" style="width:56px;flex:none;overflow:hidden;background:#15181c;
        border-right:1px solid var(--border)"></div>
-  <div id="notes" style="flex:1; overflow:auto; position:relative">
+  <div id="notes" style="flex:1;overflow:auto;position:relative">
     <div id="grid" style="position:relative"></div>
   </div>
+</div>
+<div id="velo-wrap" title="Dinámica (velocity): arrastrá cada barra para ajustar el volumen de la nota">
+  <div id="velo"></div>
 </div>
 </div>
 
 <style>
-  /* Altura por CSS (no inline) para que la regla de fullscreen pueda ganarle. */
-  #editor { height: 66vh; }
-  #editor-wrap:fullscreen { background: var(--bg); padding: 14px; }
-  #editor-wrap:fullscreen #editor { height: calc(100vh - 74px); }
+  #editor { height: 56vh; }
+  .tb { display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap; }
+  .tb--2 { padding-top:6px; border-top:1px solid var(--border); }
+  .tb .muted { font-size:13px; }
+  .tb .sep { width:1px; height:20px; background:var(--border); margin:0 2px; }
+  .btn.on { background:#f59e0b; color:#111; border-color:#f59e0b; }
+  #velo-wrap { height:66px; margin-top:6px; padding-left:56px; overflow:hidden;
+    border:1px solid var(--border); border-radius:8px; background:#0e1013; position:relative; }
+  #velo { position:relative; height:64px; }
+  #editor-wrap:fullscreen { background:var(--bg); padding:14px; overflow:auto; }
+  #editor-wrap:fullscreen #editor { height: calc(100vh - 190px); }
 </style>
 {% endblock %}
 
@@ -60,18 +100,28 @@
 (function () {
   const scoreId = {{ score.id }};
   const SOUNDFONT = {{ url_for('static', filename='soundfont') | tojson }};
-  const PPS = 120, PABS_MIN = 21, PABS_MAX = 108, RULER_H = 18;   // px/seg, rango, alto de la regla
+  let PPS = 120;                                        // px/seg (zoom horizontal)
+  const PABS_MIN = 21, PABS_MAX = 108, RULER_H = 18, VH = 64;
+  const NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
   const grid = document.getElementById('grid'), keysEl = document.getElementById('keys');
   const notesEl = document.getElementById('notes'), statusEl = document.getElementById('status');
-  const playBtn = document.getElementById('play');
+  const velo = document.getElementById('velo'), playBtn = document.getElementById('play');
   const BLACK = {1:1,3:1,6:1,8:1,10:1};
   let tempo = 120, notes = [], width = 2000;
-  let PLO = 48, PHI = 84, ROW = 14, ROWS = 37, GRIDH = 518;   // rango/tamaño dinámicos
-  const selection = new Set();   // notas seleccionadas (Shift+arrastrar) para cuantizar/borrar
+  let PLO = 48, PHI = 84, ROW = 14, ROWS = 37, GRIDH = 518, rowOverride = 0;
+  const selection = new Set();
+  const noteName = p => NAMES[((p % 12) + 12) % 12] + (Math.floor(p / 12) - 1);
 
-  // cabezal (siempre visible, marca la posición de reproducción) + regla clickeable (seek)
+  // cabezal + regla clickeable (seek) + overlay de loop
   const playhead = document.createElement('div');
   playhead.style.cssText = 'position:absolute;top:0;width:2px;background:#f59e0b;pointer-events:none;z-index:6';
+  const loopEl = document.createElement('div');
+  loopEl.style.cssText = 'position:absolute;top:0;background:rgba(245,158,11,0.10);' +
+    'border-left:1px solid #f59e0b;border-right:1px solid #f59e0b;pointer-events:none;z-index:2;display:none';
+  const tip = document.createElement('div');
+  tip.style.cssText = 'position:fixed;background:#111;color:#eee;font-size:11px;padding:2px 6px;' +
+    'border-radius:4px;pointer-events:none;z-index:99;display:none';
+  document.body.appendChild(tip);
   const ruler = document.createElement('div');
   ruler.style.cssText = 'position:absolute;top:0;left:0;height:' + RULER_H +
     'px;background:#1a1d21;border-bottom:1px solid #2a2e33;cursor:pointer;z-index:4';
@@ -82,21 +132,27 @@
     seek(Math.max(0, (e.clientX - r.left) / PPS));
   });
 
-  function step() { const b = parseFloat(document.getElementById('grid-div').value); return b ? (60 / tempo) * b : 0; }  // valor = beats por celda
+  function gridBeats() { return parseFloat(document.getElementById('grid-div').value); }
+  function step() { const b = gridBeats(); return b ? (60 / tempo) * b : 0; }   // beats por celda
   function snap(t) { const s = step(); return s ? Math.round(t / s) * s : t; }
-  const yOf = p => RULER_H + (PHI - p) * ROW;                 // las notas arrancan bajo la regla
+  function newLen() {                                   // largo de nota nueva (segundos)
+    const v = document.getElementById('new-len').value;
+    const b = v === '' ? gridBeats() : parseFloat(v);
+    return b ? (60 / tempo) * b : (step() || 0.25);
+  }
+  const yOf = p => RULER_H + (PHI - p) * ROW;
   const pOf = y => PHI - Math.floor((y - RULER_H) / ROW);
+  const opacityFor = v => (0.4 + 0.6 * v / 127).toFixed(2);
 
   function computeLayout() {
-    // rango de alturas realmente usado (+ margen). Sin notas => 3 octavas por defecto.
     if (notes.length) {
       let lo = 127, hi = 0;
       notes.forEach(n => { if (n.pitch < lo) lo = n.pitch; if (n.pitch > hi) hi = n.pitch; });
       PLO = Math.max(PABS_MIN, lo - 4); PHI = Math.min(PABS_MAX, hi + 4);
     } else { PLO = 48; PHI = 84; }
     ROWS = PHI - PLO + 1;
-    const avail = notesEl.clientHeight || 500;   // llenar toda la altura visible con el rango
-    ROW = Math.max(7, Math.floor((avail - RULER_H) / ROWS));  // sin tope: llena el eje Y
+    const avail = notesEl.clientHeight || 500;
+    ROW = rowOverride || Math.max(7, Math.floor((avail - RULER_H) / ROWS));
     GRIDH = RULER_H + ROWS * ROW;
   }
 
@@ -104,7 +160,7 @@
     keysEl.innerHTML = '';
     const inner = document.createElement('div'); inner.style.height = GRIDH + 'px';
     const spacer = document.createElement('div'); spacer.style.height = RULER_H + 'px';
-    inner.appendChild(spacer);   // alinea las teclas con las filas (que arrancan bajo la regla)
+    inner.appendChild(spacer);
     for (let p = PHI; p >= PLO; p--) {
       const k = document.createElement('div'), black = BLACK[p % 12];
       k.style.cssText = `height:${ROW}px;box-sizing:border-box;border-bottom:1px solid #22262b;` +
@@ -125,41 +181,64 @@
   function noteEl(n) {
     const el = document.createElement('div');
     el.style.cssText = 'position:absolute;background:#2DD4BF;border:1px solid #0f766e;' +
-      'border-radius:2px;box-sizing:border-box;cursor:grab';
+      'border-radius:2px;box-sizing:border-box;cursor:grab;opacity:' + opacityFor(n.velocity);
     place(el, n);
-    if (selection.has(n)) el.style.outline = '2px solid #f59e0b';   // resaltar si está seleccionada
+    if (selection.has(n)) el.style.outline = '2px solid #f59e0b';
     el.addEventListener('mousedown', e => startDrag(e, n, el));
     el.addEventListener('dblclick', e => { e.stopPropagation(); removeNote(n, el); });
     n.el = el; return el;
   }
 
-  function clearSelection() {
-    selection.forEach(n => { if (n.el) n.el.style.outline = ''; });
-    selection.clear();
-  }
-  function selectAll() {
-    notes.forEach(n => { selection.add(n); if (n.el) n.el.style.outline = '2px solid #f59e0b'; });
-    statusEl.textContent = notes.length + ' notas seleccionadas';
-  }
+  // --- selección ---
+  function selAdd(n) { selection.add(n); if (n.el) n.el.style.outline = '2px solid #f59e0b'; }
+  function selDel(n) { selection.delete(n); if (n.el) n.el.style.outline = ''; }
+  function clearSelection() { selection.forEach(n => { if (n.el) n.el.style.outline = ''; }); selection.clear(); }
+  function selectAll() { notes.forEach(selAdd); statusEl.textContent = notes.length + ' notas seleccionadas'; }
 
-  // --- historial (deshacer) ---
-  const history = [];
+  // --- historial (deshacer / rehacer) ---
+  const history = [], redoStack = [];
   function snapshot() { return notes.map(n => ({ pitch: n.pitch, start: n.start, end: n.end, velocity: n.velocity })); }
-  function pushHistory() { history.push(snapshot()); if (history.length > 60) history.shift(); }
+  function pushHistory() { history.push(snapshot()); if (history.length > 80) history.shift(); redoStack.length = 0; }
   function undo() {
     if (!history.length) { statusEl.textContent = 'nada para deshacer'; return; }
-    notes = history.pop(); selection.clear(); render(); dirty();
+    redoStack.push(snapshot()); notes = history.pop(); selection.clear(); render(); dirty();
     statusEl.textContent = 'deshecho';
   }
+  function redo() {
+    if (!redoStack.length) { statusEl.textContent = 'nada para rehacer'; return; }
+    history.push(snapshot()); notes = redoStack.pop(); selection.clear(); render(); dirty();
+    statusEl.textContent = 'rehecho';
+  }
+
+  // --- copiar / pegar / duplicar ---
+  let clip = [];
+  function copy() {
+    if (!selection.size) { statusEl.textContent = 'nada seleccionado'; return; }
+    const arr = [...selection], t0 = Math.min(...arr.map(n => n.start));
+    clip = arr.map(n => ({ pitch: n.pitch, start: n.start - t0, end: n.end - t0, velocity: n.velocity }));
+    statusEl.textContent = clip.length + ' copiadas';
+  }
+  function pasteAt(base) {
+    if (!clip.length) return;
+    pushHistory(); clearSelection();
+    const news = clip.map(c => ({ pitch: c.pitch, start: base + c.start, end: base + c.end, velocity: c.velocity }));
+    news.forEach(n => notes.push(n)); render(); news.forEach(selAdd); dirty();
+    statusEl.textContent = news.length + ' pegadas';
+  }
+  function paste() { pasteAt(snap(currentPos())); }
+  function duplicate() {
+    if (!selection.size) { statusEl.textContent = 'nada seleccionado'; return; }
+    const arr = [...selection], lo = Math.min(...arr.map(n => n.start)), hi = Math.max(...arr.map(n => n.end));
+    copy(); pasteAt(lo + (hi - lo));   // aparece justo a continuación
+  }
+
   function gridBg() {
-    // líneas verticales según la grilla + beat (negra) + compás (4/4), y octavas horizontales
     const beatPx = (60 / tempo) * PPS;
-    const b = parseFloat(document.getElementById('grid-div').value);
-    const subPx = b ? beatPx * b : 0;
+    const b = gridBeats(), subPx = b ? beatPx * b : 0;
     const vline = (px, color) =>
       'repeating-linear-gradient(90deg,' + color + ' 0,' + color + ' 1px,transparent 1px,transparent ' + px + 'px)';
-    const layers = [vline(beatPx * 4, '#3a3f47'), vline(beatPx, '#262a30')];   // compás, beat
-    if (subPx >= 4) layers.push(vline(subPx, '#20242a'));                       // subdivisión
+    const layers = [vline(beatPx * 4, '#3a3f47'), vline(beatPx, '#262a30')];
+    if (subPx >= 4) layers.push(vline(subPx, '#20242a'));
     layers.push('repeating-linear-gradient(0deg,#181b1f 0,#181b1f 1px,transparent 1px,transparent ' + (ROW * 12) + 'px)');
     return layers.join(',');
   }
@@ -169,37 +248,82 @@
     grid.style.backgroundImage = gridBg();
     grid.innerHTML = '';
     notes.forEach(n => grid.appendChild(noteEl(n)));
-    ruler.style.width = width + 'px'; grid.appendChild(ruler);
+    ruler.style.width = width + 'px';
+    const barPx = (60 / tempo) * PPS * 4;               // números de compás
+    if (barPx > 24) for (let i = 0, x = 0; x < width; i++, x += barPx) {
+      const s = document.createElement('div');
+      s.textContent = i + 1;
+      s.style.cssText = 'position:absolute;left:' + (x + 3) + 'px;top:2px;font-size:9px;color:#6b7280';
+      ruler.appendChild(s);
+    }
+    grid.appendChild(ruler);
+    loopEl.style.height = GRIDH + 'px'; grid.appendChild(loopEl); updateLoop();
     playhead.style.height = GRIDH + 'px'; grid.appendChild(playhead);
     movePlayhead(playPos);
+    veloRender();
   }
   function layout() { computeLayout(); buildKeyboard(); render(); }
 
-  function removeNote(n, el) { pushHistory(); el.remove(); notes = notes.filter(x => x !== n); dirty(); }
-  function dirty() { statusEl.textContent = 'sin guardar'; }
+  function removeNote(n, el) { pushHistory(); el.remove(); notes = notes.filter(x => x !== n); dirty(); veloRender(); }
+  let draftT = 0;
+  function dirty() {
+    statusEl.textContent = 'sin guardar';
+    clearTimeout(draftT); draftT = setTimeout(saveDraft, 800);   // autosave local (sin regenerar)
+  }
 
-  let selBox = null, selStart = null;
+  // --- carril de dinámica (velocity) ---
+  let veloDrag = null;
+  function veloRender() {
+    velo.innerHTML = ''; velo.style.width = width + 'px';
+    velo.style.transform = 'translateX(' + (-notesEl.scrollLeft) + 'px)';
+    notes.forEach(n => {
+      const b = document.createElement('div');
+      b.style.cssText = 'position:absolute;bottom:0;left:' + (n.start * PPS) + 'px;width:' +
+        Math.max(2, (n.end - n.start) * PPS) + 'px;height:' + Math.max(2, n.velocity / 127 * VH) +
+        'px;background:#2DD4BF;opacity:.75;cursor:ns-resize';
+      b.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); pushHistory(); veloDrag = n; });
+      velo.appendChild(b);
+    });
+  }
+  window.addEventListener('mousemove', e => {
+    if (!veloDrag) return;
+    const r = velo.getBoundingClientRect();
+    let v = Math.round((1 - (e.clientY - r.top) / VH) * 127);
+    v = Math.max(1, Math.min(127, v));
+    veloDrag.velocity = v;
+    if (veloDrag.el) veloDrag.el.style.opacity = opacityFor(v);
+    veloRender(); statusEl.textContent = 'velocity ' + v;
+  });
+  window.addEventListener('mouseup', () => { if (veloDrag) { veloDrag = null; dirty(); } });
+
+  // --- agregar / seleccionar área / pincel ---
+  let selBox = null, selStart = null, brushing = false;
+  function cellFree(t, p) { const s = step() || 0.25; return !notes.some(n => n.pitch === p && Math.abs(n.start - t) < s * 0.5); }
+  function addNote(t, p) {
+    if (p < PLO || p > PHI || !cellFree(t, p)) return null;
+    const n = { pitch: p, start: t, end: t + newLen(), velocity: 80 };
+    notes.push(n); grid.insertBefore(noteEl(n), playhead); veloRender(); previewNote(p, 80); return n;
+  }
   grid.addEventListener('mousedown', e => {
     if (e.target !== grid) return;
-    const r = grid.getBoundingClientRect();
-    const gx = e.clientX - r.left, gy = e.clientY - r.top;
-    if (e.shiftKey) {                               // Shift+arrastrar => seleccionar área
+    const r = grid.getBoundingClientRect(), gx = e.clientX - r.left, gy = e.clientY - r.top;
+    if (e.shiftKey) {                               // seleccionar área
       e.preventDefault(); clearSelection();
       selStart = { x: gx, y: gy };
       selBox = document.createElement('div');
-      selBox.style.cssText = 'position:absolute;border:1px solid #f59e0b;' +
-        'background:rgba(245,158,11,0.12);z-index:7;pointer-events:none';
-      grid.appendChild(selBox);
-      return;
+      selBox.style.cssText = 'position:absolute;border:1px solid #f59e0b;background:rgba(245,158,11,0.12);z-index:7;pointer-events:none';
+      grid.appendChild(selBox); return;
     }
-    clearSelection();                               // click normal => agregar nota
-    const t = snap(gx / PPS), p = pOf(gy);
-    if (p < PLO || p > PHI) return;
+    clearSelection();
     pushHistory();
-    const n = { pitch: p, start: t, end: t + (step() || 0.25), velocity: 80 };
-    notes.push(n); grid.insertBefore(noteEl(n), playhead); dirty();
+    if (document.getElementById('brush').classList.contains('on')) { brushing = true; }
+    addNote(snap(gx / PPS), pOf(gy)); dirty();
   });
   window.addEventListener('mousemove', e => {
+    if (brushing) {
+      const r = grid.getBoundingClientRect();
+      addNote(snap((e.clientX - r.left) / PPS), pOf(e.clientY - r.top)); dirty(); return;
+    }
     if (!selBox) return;
     const r = grid.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
     selBox.style.left = Math.min(x, selStart.x) + 'px';
@@ -208,82 +332,149 @@
     selBox.style.height = Math.abs(y - selStart.y) + 'px';
   });
   window.addEventListener('mouseup', e => {
+    if (brushing) { brushing = false; return; }
     if (!selBox) return;
     const r = grid.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
     const t0 = Math.min(x, selStart.x) / PPS, t1 = Math.max(x, selStart.x) / PPS;
     const pHi = pOf(Math.min(y, selStart.y)), pLo = pOf(Math.max(y, selStart.y));
-    notes.forEach(n => {   // notas que solapan el área (tiempo y altura)
-      if (n.start < t1 && n.end > t0 && n.pitch >= pLo && n.pitch <= pHi) {
-        selection.add(n); if (n.el) n.el.style.outline = '2px solid #f59e0b';
-      }
-    });
+    notes.forEach(n => { if (n.start < t1 && n.end > t0 && n.pitch >= pLo && n.pitch <= pHi) selAdd(n); });
     selBox.remove(); selBox = null; selStart = null;
     statusEl.textContent = selection.size ? (selection.size + ' notas seleccionadas') : '';
   });
 
+  // --- mover / redimensionar / click-seleccionar ---
   let drag = null;
   function startDrag(e, n, el) {
     e.preventDefault(); e.stopPropagation();
     const r = el.getBoundingClientRect(), resize = (e.clientX > r.right - 7);
-    let group;
-    if (!resize && selection.has(n) && selection.size > 1) {   // arrastra el grupo seleccionado
-      group = [...selection].map(m => ({ m, s0: m.start, e0: m.end, p0: m.pitch }));
-    } else {
-      if (!selection.has(n)) clearSelection();
-      group = [{ m: n, s0: n.start, e0: n.end, p0: n.pitch }];
-    }
-    drag = { resize, moved: false, ox: e.clientX, oy: e.clientY, s0: n.start, e0: n.end, group };
+    drag = { resize, moved: false, ox: e.clientX, oy: e.clientY, n, el, ctrl: (e.ctrlKey || e.metaKey), group: null, s0: n.start, e0: n.end };
     document.body.style.userSelect = 'none';
   }
   window.addEventListener('mousemove', e => {
     if (!drag) return;
-    if (!drag.moved) { pushHistory(); drag.moved = true; }     // 1 undo por gesto de arrastre
+    if (!drag.moved) {                              // primer movimiento: 1 undo + arma el grupo
+      pushHistory(); drag.moved = true;
+      const n = drag.n;
+      if (drag.resize) drag.group = [{ m: n, s0: n.start, e0: n.end, p0: n.pitch }];
+      else {
+        if (!selection.has(n) && !drag.ctrl) clearSelection();
+        if (!selection.has(n)) selAdd(n);
+        const set = selection.size > 1 ? [...selection] : [n];
+        drag.group = set.map(m => ({ m, s0: m.start, e0: m.end, p0: m.pitch }));
+      }
+    }
     const dx = (e.clientX - drag.ox) / PPS, dy = e.clientY - drag.oy;
     if (drag.resize) {
       const g = drag.group[0].m;
       g.end = Math.max(drag.s0 + 0.03, snap(drag.e0 + dx));
       if (g.el) place(g.el, g);
+      showTip(e, noteName(g.pitch) + '  ' + (g.end - g.start).toFixed(2) + 's');
     } else {
-      const dt = snap(drag.s0 + dx) - drag.s0;                 // delta de tiempo (snapeado)
-      const dp = Math.round(dy / ROW);                          // delta de semitonos
+      const dt = snap(drag.s0 + dx) - drag.s0, dp = Math.round(dy / ROW);
       drag.group.forEach(o => {
         o.m.start = Math.max(0, o.s0 + dt);
         o.m.end = o.m.start + (o.e0 - o.s0);
-        o.m.pitch = Math.min(PHI, Math.max(PLO, o.p0 - dp));
+        const np = Math.min(PHI, Math.max(PLO, o.p0 - dp));
+        if (np !== o.m.pitch && o.m === drag.n) previewNote(np, o.m.velocity);
+        o.m.pitch = np;
         if (o.m.el) place(o.m.el, o.m);
       });
+      showTip(e, noteName(drag.n.pitch));
     }
+    veloRender();
   });
-  window.addEventListener('mouseup', () => { if (drag) { if (drag.moved) dirty(); drag = null; document.body.style.userSelect = ''; } });
-  notesEl.addEventListener('scroll', () => { keysEl.scrollTop = notesEl.scrollTop; });
+  window.addEventListener('mouseup', () => {
+    if (!drag) return;
+    hideTip();
+    if (drag.moved) dirty();
+    else {                                          // click sin arrastre => seleccionar
+      const n = drag.n;
+      if (drag.ctrl) { selection.has(n) ? selDel(n) : selAdd(n); }
+      else { clearSelection(); selAdd(n); previewNote(n.pitch, n.velocity); }
+      statusEl.textContent = selection.size + ' seleccionada(s)';
+    }
+    drag = null; document.body.style.userSelect = '';
+  });
+
+  function showTip(e, txt) { tip.textContent = txt; tip.style.display = 'block'; tip.style.left = (e.clientX + 12) + 'px'; tip.style.top = (e.clientY - 24) + 'px'; }
+  function hideTip() { tip.style.display = 'none'; }
+
+  notesEl.addEventListener('scroll', () => {
+    keysEl.scrollTop = notesEl.scrollTop;
+    velo.style.transform = 'translateX(' + (-notesEl.scrollLeft) + 'px)';
+  });
   document.getElementById('grid-div').addEventListener('change', () => { grid.style.backgroundImage = gridBg(); });
 
-  // cuantizar: ajusta el inicio y fin de todas las notas a la celda más cercana (corrige desfases)
+  // --- cuantizar ---
   document.getElementById('quantize').addEventListener('click', () => {
     const s = step();
     if (!s) { statusEl.textContent = 'elegí una grilla (no "Libre") para ajustar'; return; }
     pushHistory();
-    const target = selection.size ? notes.filter(n => selection.has(n)) : notes;   // área o todo
+    const target = selection.size ? notes.filter(n => selection.has(n)) : notes;
     target.forEach(n => {
-      const st = Math.round(n.start / s) * s;
-      let en = Math.round(n.end / s) * s;
-      if (en <= st) en = st + s;          // mínimo una celda de duración
-      n.start = st; n.end = en;
-      if (n.el) place(n.el, n);
+      const st = Math.round(n.start / s) * s; let en = Math.round(n.end / s) * s;
+      if (en <= st) en = st + s;
+      n.start = st; n.end = en; if (n.el) place(n.el, n);
     });
-    dirty();
-    statusEl.textContent = (selection.size ? selection.size + ' notas' : 'todas las notas') + ' ajustadas a la grilla';
+    dirty(); veloRender();
+    statusEl.textContent = (selection.size ? selection.size + ' notas' : 'todas') + ' ajustadas a la grilla';
   });
 
-  // --- reproducción con posición (pausa/reanuda, seek con la regla, reiniciar) ---
-  let sfp = null, playing = false, raf = 0;
-  let playPos = 0, segStart = 0, wall0 = 0;   // playPos persiste entre pausas
+  // --- transponer / mover selección ---
+  function moveSel(dt, dp) {
+    if (!selection.size) { statusEl.textContent = 'nada seleccionado'; return; }
+    pushHistory();
+    selection.forEach(n => {
+      n.start = Math.max(0, n.start + dt); n.end = n.end + dt;
+      n.pitch = Math.min(PABS_MAX, Math.max(PABS_MIN, n.pitch + dp));
+    });
+    layout(); dirty();
+  }
+
+  // --- zoom ---
+  function zoomH(factor, clientX) {
+    const r = notesEl.getBoundingClientRect();
+    const off = clientX != null ? clientX - r.left : notesEl.clientWidth / 2;
+    const tAt = (off + notesEl.scrollLeft) / PPS;
+    PPS = Math.max(20, Math.min(800, PPS * factor));
+    width = Math.max(2000, songEnd() * PPS + 600);
+    render(); notesEl.scrollLeft = tAt * PPS - off;
+  }
+  function zoomV(factor) {
+    rowOverride = Math.max(5, Math.min(46, Math.round((rowOverride || ROW) * factor)));
+    layout();
+  }
+
+  // --- reproducción con posición (pausa/reanuda, seek, loop, metrónomo) ---
+  let sfp = null, preview = null, playing = false, raf = 0;
+  let playPos = 0, segStart = 0, wall0 = 0, lastBeat = -1;
+  let loopOn = false, loopA = 0, loopB = 0;
+  let metroOn = false, actx = null;
 
   function songEnd() { return notes.reduce((m, n) => Math.max(m, n.end), 0); }
   function movePlayhead(t) { playhead.style.left = (t * PPS) + 'px'; }
   function currentPos() { return playing ? segStart + (performance.now() / 1000 - wall0) : playPos; }
 
-  function subSeqFrom(fromT) {   // notas desde fromT, desplazadas para arrancar en 0
+  function previewNote(pitch, vel) {                   // sonar al editar
+    try {
+      if (!preview) preview = new core.SoundFontPlayer(SOUNDFONT);
+      const seq = { notes: [{ pitch, startTime: 0, endTime: 0.45, velocity: vel || 80 }], totalTime: 0.5 };
+      preview.loadSamples(seq).then(() => { try { preview.start(seq); } catch (e) {} });
+    } catch (e) {}
+  }
+  function blip(freq) {
+    try {
+      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.frequency.value = freq; o.connect(g); g.connect(actx.destination);
+      g.gain.setValueAtTime(0.0001, actx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.25, actx.currentTime + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + 0.08);
+      o.start(); o.stop(actx.currentTime + 0.09);
+    } catch (e) {}
+  }
+
+  function subSeqFrom(fromT) {
     const ns = []; let maxEnd = 0;
     notes.forEach(n => {
       if (n.end <= fromT + 0.001) return;
@@ -293,7 +484,6 @@
     });
     return { notes: ns, totalTime: maxEnd + 0.5 };
   }
-
   function stopAudio() {
     if (sfp) { try { sfp.stop(); } catch (e) {} }
     cancelAnimationFrame(raf); playing = false; playBtn.textContent = '▶ Reproducir';
@@ -306,7 +496,7 @@
   function startPlay() {
     if (playing) { pausePlay(); return; }
     if (!notes.length) return;
-    if (playPos >= songEnd()) playPos = 0;             // si estaba al final, arranca de cero
+    if (playPos >= songEnd()) playPos = 0;
     const seq = subSeqFrom(playPos);
     if (!seq.notes.length) return;
     if (!sfp) sfp = new core.SoundFontPlayer(SOUNDFONT);
@@ -314,13 +504,15 @@
     sfp.loadSamples(seq).then(() => {
       statusEl.textContent = ''; playBtn.disabled = false;
       playing = true; playBtn.textContent = '⏸ Pausar';
-      segStart = playPos; wall0 = performance.now() / 1000;
+      segStart = playPos; wall0 = performance.now() / 1000; lastBeat = -1;
       try { sfp.start(seq); } catch (e) {}
       const end = songEnd();
       (function tick() {
         if (!playing) return;
         const t = segStart + (performance.now() / 1000 - wall0);
+        if (loopOn && loopB > loopA && t >= loopB) { seek(loopA); if (!playing) startPlay(); return; }
         if (t >= end + 0.2) { stopAudio(); playPos = 0; movePlayhead(0); return; }
+        if (metroOn) { const bi = Math.floor(t / (60 / tempo)); if (bi !== lastBeat) { lastBeat = bi; blip(bi % 4 === 0 ? 1400 : 900); } }
         movePlayhead(t);
         const x = t * PPS;
         if (x < notesEl.scrollLeft || x > notesEl.scrollLeft + notesEl.clientWidth - 120)
@@ -329,63 +521,125 @@
       })();
     }).catch(() => { statusEl.textContent = 'error de audio'; playBtn.disabled = false; });
   }
-  function seek(t) {   // mover el cabezal a t; si estaba sonando, reanuda desde ahí
+  function seek(t) {
     const was = playing;
     if (playing) stopAudio();
     playPos = Math.max(0, Math.min(t, songEnd()));
     movePlayhead(playPos);
     if (was) startPlay();
   }
+  function updateLoop() {
+    if (loopOn && loopB > loopA) {
+      loopEl.style.display = 'block';
+      loopEl.style.left = (loopA * PPS) + 'px';
+      loopEl.style.width = ((loopB - loopA) * PPS) + 'px';
+    } else loopEl.style.display = 'none';
+  }
+  function toggleLoop() {
+    const btn = document.getElementById('loop');
+    if (loopOn) { loopOn = false; btn.classList.remove('on'); updateLoop(); statusEl.textContent = 'loop off'; return; }
+    if (selection.size) {
+      const arr = [...selection]; loopA = Math.min(...arr.map(n => n.start)); loopB = Math.max(...arr.map(n => n.end));
+    } else { loopA = 0; loopB = songEnd(); }
+    loopOn = true; btn.classList.add('on'); updateLoop();
+    statusEl.textContent = 'loop ' + loopA.toFixed(1) + '–' + loopB.toFixed(1) + 's';
+  }
 
+  // --- botones / atajos ---
   playBtn.addEventListener('click', startPlay);
   document.getElementById('rewind').addEventListener('click', () => seek(0));
+  document.getElementById('loop').addEventListener('click', toggleLoop);
+  document.getElementById('metro').addEventListener('click', function () { metroOn = !metroOn; this.classList.toggle('on', metroOn); });
   document.getElementById('undo').addEventListener('click', undo);
+  document.getElementById('redo').addEventListener('click', redo);
+  document.getElementById('copy').addEventListener('click', copy);
+  document.getElementById('paste').addEventListener('click', paste);
+  document.getElementById('dup').addEventListener('click', duplicate);
   document.getElementById('select-all').addEventListener('click', selectAll);
+  document.getElementById('brush').addEventListener('click', function () { this.classList.toggle('on'); });
+  document.getElementById('zoom-in').addEventListener('click', () => zoomH(1.25, null));
+  document.getElementById('zoom-out').addEventListener('click', () => zoomH(0.8, null));
+  const bpmEl = document.getElementById('bpm');
+  bpmEl.addEventListener('change', () => {
+    const v = parseInt(bpmEl.value, 10);
+    if (v >= 20 && v <= 400) { tempo = v; width = Math.max(2000, songEnd() * PPS + 600); render(); dirty(); }
+  });
+  document.getElementById('tr-8d').addEventListener('click', () => moveSel(0, -12));
+  document.getElementById('tr-1d').addEventListener('click', () => moveSel(0, -1));
+  document.getElementById('tr-1u').addEventListener('click', () => moveSel(0, 1));
+  document.getElementById('tr-8u').addEventListener('click', () => moveSel(0, 12));
+
+  notesEl.addEventListener('wheel', e => {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    e.preventDefault();
+    if (e.shiftKey) zoomV(e.deltaY < 0 ? 1.15 : 0.87);
+    else zoomH(e.deltaY < 0 ? 1.15 : 0.87, e.clientX);
+  }, { passive: false });
+
   document.addEventListener('keydown', e => {
-    const inField = /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName);
-    if (inField) return;
-    if ((e.ctrlKey || e.metaKey) && e.code === 'KeyA') { e.preventDefault(); selectAll(); }   // Ctrl+A
-    else if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undo(); }   // Ctrl+Z
-    else if (e.code === 'Space') { e.preventDefault(); startPlay(); }                     // play/pausa
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+    const mod = e.ctrlKey || e.metaKey;
+    if (mod && e.code === 'KeyZ' && e.shiftKey) { e.preventDefault(); redo(); }
+    else if (mod && e.code === 'KeyZ') { e.preventDefault(); undo(); }
+    else if (mod && e.code === 'KeyY') { e.preventDefault(); redo(); }
+    else if (mod && e.code === 'KeyA') { e.preventDefault(); selectAll(); }
+    else if (mod && e.code === 'KeyC') { e.preventDefault(); copy(); }
+    else if (mod && e.code === 'KeyV') { e.preventDefault(); paste(); }
+    else if (mod && e.code === 'KeyD') { e.preventDefault(); duplicate(); }
+    else if (e.code === 'Space') { e.preventDefault(); startPlay(); }
+    else if (e.code === 'ArrowUp') { e.preventDefault(); moveSel(0, e.shiftKey ? 12 : 1); }
+    else if (e.code === 'ArrowDown') { e.preventDefault(); moveSel(0, e.shiftKey ? -12 : -1); }
+    else if (e.code === 'ArrowRight') { e.preventDefault(); moveSel(step() || (60 / tempo), 0); }
+    else if (e.code === 'ArrowLeft') { e.preventDefault(); moveSel(-(step() || (60 / tempo)), 0); }
     else if ((e.code === 'Delete' || e.code === 'Backspace') && selection.size) {
-      e.preventDefault(); pushHistory();           // Supr = borra el área seleccionada
+      e.preventDefault(); pushHistory();
       selection.forEach(n => { if (n.el) n.el.remove(); });
       notes = notes.filter(n => !selection.has(n));
-      selection.clear(); dirty(); statusEl.textContent = 'notas borradas';
+      selection.clear(); dirty(); veloRender(); statusEl.textContent = 'notas borradas';
     }
   });
 
-  // --- pantalla completa (recalcula el layout para llenar la altura nueva) ---
+  // --- pantalla completa ---
   const wrap = document.getElementById('editor-wrap'), fsBtn = document.getElementById('fs');
   fsBtn.addEventListener('click', () => {
     if (document.fullscreenElement) document.exitFullscreen();
     else wrap.requestFullscreen().catch(() => {});
   });
   document.addEventListener('fullscreenchange', () => {
-    fsBtn.textContent = document.fullscreenElement ? '⛶ Salir de pantalla completa' : '⛶ Pantalla completa';
+    fsBtn.textContent = document.fullscreenElement ? '⛶ Salir' : '⛶ Pantalla completa';
     setTimeout(() => { if (!playing) layout(); }, 120);
   });
   let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(() => { if (!playing) layout(); }, 200); });
+
+  // --- borrador local (sobrevive recargas sin regenerar la partitura) ---
+  const DRAFT_KEY = 'clavis_draft_' + scoreId;
+  function saveDraft() { try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ tempo, notes: snapshot() })); } catch (e) {} }
+  function clearDraft() { try { localStorage.removeItem(DRAFT_KEY); } catch (e) {} }
 
   // --- cargar / guardar ---
   fetch('/score/' + scoreId + '/notes', { headers: { 'Accept': 'application/json' } })
     .then(r => r.json()).then(d => {
       tempo = d.tempo || 120; notes = d.notes || [];
-      const maxEnd = notes.reduce((m, n) => Math.max(m, n.end), 0);
-      width = Math.max(2000, maxEnd * PPS + 600);
+      let draft = null;
+      try { draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch (e) {}
+      if (draft && draft.notes && confirm('Hay cambios sin guardar de una sesión anterior. ¿Restaurarlos?')) {
+        tempo = draft.tempo || tempo; notes = draft.notes;
+      }
+      bpmEl.value = Math.round(tempo);
+      width = Math.max(2000, songEnd() * PPS + 600);
       layout();
     });
 
   document.getElementById('save').addEventListener('click', function () {
     const btn = this; btn.disabled = true; statusEl.textContent = 'guardando y regenerando…';
-    const payload = { tempo: tempo, notes: notes.map(n =>
+    const payload = { tempo, notes: notes.map(n =>
       ({ pitch: n.pitch, start: +n.start.toFixed(4), end: +n.end.toFixed(4), velocity: n.velocity })) };
     fetch('/score/' + scoreId + '/notes', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json',
-                 'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content },
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content },
       body: JSON.stringify(payload)
     }).then(r => r.json()).then(d => {
+      if (d.ok) clearDraft();
       statusEl.textContent = d.ok ? 'guardado ✓ partitura regenerada' : 'error al guardar';
     }).catch(() => { statusEl.textContent = 'error al guardar'; })
       .finally(() => { btn.disabled = false; });
