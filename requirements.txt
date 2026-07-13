@@ -16,4 +16,4 @@ pyotp==2.9.0
 qrcode==8.0
 
 # Pipeline ML (piano_transcription_inference/music21/librosa/demucs/torch): instalar con
-# scripts/install_ml.sh (maneja torch CPU-only y baja el checkpoint del modelo de piano).
+# scripts/install_ml.sh (torch CPU, checkpoint de piano, y audio-separator para aislar piano).

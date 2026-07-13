@@ -9,7 +9,7 @@ from rq import Queue
 
 from . import storage
 from .extensions import db
-from .pipeline import separate_stems, transcribe  # patcheable en tests
+from .pipeline import separate_piano_hq, transcribe  # patcheable en tests
 
 QUEUE_NAME = "clavis"
 JOB_TIMEOUT = 1800  # 30 min duro por job (defensa DoS, refuerza el tope de duración del paso 12)
@@ -137,11 +137,9 @@ def _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, separate
     """Transcribe el piano -> un Score. Si `separate`, aísla primero el piano de la mezcla."""
     wav = audio_path
     if separate:
-        _stage(job_id, "aislando el piano")
-        stems = separate_stems(audio_path, work_dir, ["piano"])  # Demucs, solo el stem de piano
-        wav = stems.get("piano")
-        if not wav:
-            raise RuntimeError("no se pudo aislar el piano")
+        _stage(job_id, "aislando el piano (roformer + demucs)")
+        # cascada de alta calidad: roformer quita la voz + demucs saca el piano (lento pero mejor)
+        wav = separate_piano_hq(audio_path, work_dir)
 
     _stage(job_id, "transcribiendo piano")
     out_dir = os.path.join(work_dir, "out")

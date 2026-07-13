@@ -11,8 +11,18 @@ $PIP install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
 # Transcripción de piano (ByteDance, SOTA en piano solo) + music21 + librosa (tempo).
 $PIP install piano_transcription_inference "music21==10.5.0" "librosa==0.11.0" "scipy" "resampy"
 
-# Demucs para aislar el piano de una mezcla (opcional en la UI).
-$PIP install demucs
+# Separación de piano (opcional en la UI). Cascada de alta calidad:
+#   audio-separator (MelBand Roformer, SOTA en voz) quita la voz + Demucs saca el piano.
+$PIP install demucs "audio-separator"
+
+# Pre-descargar el modelo roformer (~913 MB) a la cache persistente.
+.venv/bin/python - <<'PYEOF' || true
+import os
+from audio_separator.separator import Separator
+d = os.path.expanduser("~/.cache/audio-separator-models"); os.makedirs(d, exist_ok=True)
+Separator(model_file_dir=d, log_level=40).load_model("mel_band_roformer_kim_ft_unwa.ckpt")
+print("roformer descargado")
+PYEOF
 
 # Cola de jobs
 $PIP install "rq==2.6.0"

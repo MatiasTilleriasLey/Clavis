@@ -111,15 +111,12 @@ def run():
         p = os.path.join(work_dir, "score.musicxml")
         open(p, "w").write("<score-partwise><part/></score-partwise>")
         return p, None
-    def _fake_separate(audio_path, work_dir, stems):
-        out = {}
-        for ui in stems:
-            p = os.path.join(work_dir, f"{ui}.wav")
-            open(p, "wb").write(b"x")
-            out[ui] = p
-        return out
+    def _fake_separate_piano(audio_path, work_dir):
+        p = os.path.join(work_dir, "piano.wav")
+        open(p, "wb").write(b"x")
+        return p
     _jobs.transcribe = _fake_transcribe
-    _jobs.separate_stems = _fake_separate
+    _jobs.separate_piano_hq = _fake_separate_piano
 
     def up(c, data, name, extra=None):
         payload = {"audio": (BytesIO(data), name)}

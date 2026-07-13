@@ -133,6 +133,49 @@ def apply_metadata(xml_path, pdf_path, title, composer, arranger, mscore_bin):
         _run_mscore(mscore_bin, xml_path, pdf_path)
 
 
+# Separación de piano de alta calidad (cascada). Los modelos se cachean acá (persistente).
+AUDIO_SEP_MODELS = os.path.expanduser("~/.cache/audio-separator-models")
+VOCAL_ROFORMER = "mel_band_roformer_kim_ft_unwa.ckpt"  # MelBand Roformer (SOTA en voz, 12.4 SDR)
+
+
+def separate_piano_hq(audio_path, work_dir):
+    """Aísla el piano en dos etapas, priorizando calidad sobre velocidad:
+    1) MelBand Roformer quita la voz (donde los roformer superan por lejos a Demucs);
+    2) htdemucs_6s extrae el piano del instrumental ya sin voz (más limpio que sobre la mezcla).
+    Devuelve el path del WAV de piano."""
+    import shutil
+    import uuid as _uuid
+
+    from audio_separator.separator import Separator
+
+    os.makedirs(AUDIO_SEP_MODELS, exist_ok=True)
+    rof_dir = os.path.join(work_dir, "roformer")
+    os.makedirs(rof_dir, exist_ok=True)
+
+    sep = Separator(output_dir=rof_dir, model_file_dir=AUDIO_SEP_MODELS, log_level=40)
+    sep.load_model(VOCAL_ROFORMER)
+    outs = sep.separate(audio_path)  # produce (vocals) y (other=instrumental)
+    inst = next((os.path.join(rof_dir, f) for f in outs
+                 if "(other)" in f or "instrumental" in f.lower()), None)
+    for f in outs:  # borrar el stem de voz, no se usa (§6.16)
+        if "(vocals)" in f:
+            try:
+                os.remove(os.path.join(rof_dir, f))
+            except OSError:
+                pass
+    if not inst:
+        raise RuntimeError("no se pudo quitar la voz")
+
+    # nombre interno UUID para el subprocess de Demucs (§6.6)
+    inst_uuid = os.path.join(work_dir, _uuid.uuid4().hex + ".wav")
+    shutil.copy(inst, inst_uuid)
+    os.remove(inst)
+    piano = separate_stems(inst_uuid, work_dir, ["piano"]).get("piano")
+    if not piano:
+        raise RuntimeError("no se pudo aislar el piano")
+    return piano
+
+
 def separate_stems(audio_path, work_dir, stems):
     """Separa el audio en los stems pedidos (Demucs, CPU). Devuelve {nombre_ui: wav_path}.
     `stems` se filtra contra STEM_MAP: nunca pasa texto externo al subprocess (§6.6)."""
