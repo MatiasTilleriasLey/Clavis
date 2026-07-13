@@ -121,7 +121,8 @@ def _lock_clefs(xml_path):
         return canon.get(n, m.group(0))  # fuerza la clave canónica en la primera aparición
 
     txt = open(xml_path, encoding="utf-8").read()
-    txt = re.sub(r'<clef number="(\d)">.*?</clef>', repl, txt, flags=re.S)
+    # [^>]* cubre atributos extra que mete MuseScore (ej. after-barline="yes").
+    txt = re.sub(r'<clef number="(\d)"[^>]*>.*?</clef>', repl, txt, flags=re.S)
     open(xml_path, "w", encoding="utf-8").write(txt)
 
 

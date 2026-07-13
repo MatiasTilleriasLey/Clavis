@@ -32,8 +32,10 @@ def is_allowed_url(url):
 
 
 def _ytdlp(args, timeout):
-    return subprocess.run([sys.executable, "-m", "yt_dlp", "--no-playlist", *args],
-                          check=True, timeout=timeout, capture_output=True, text=True, shell=False)
+    # YouTube ahora exige un runtime de JS para la extracción; usamos node (ya instalado).
+    return subprocess.run(
+        [sys.executable, "-m", "yt_dlp", "--no-playlist", "--js-runtimes", "node", *args],
+        check=True, timeout=timeout, capture_output=True, text=True, shell=False)
 
 
 def probe(url):
