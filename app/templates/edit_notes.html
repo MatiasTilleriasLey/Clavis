@@ -15,6 +15,7 @@
 <div style="display:flex; gap:12px; align-items:center; margin-bottom:10px; flex-wrap:wrap">
   <button id="play" class="btn btn--ghost">▶ Reproducir</button>
   <button id="rewind" class="btn btn--ghost" title="Volver al inicio">⏮ Desde el inicio</button>
+  <button id="undo" class="btn btn--ghost" title="Deshacer (Ctrl+Z)">↶ Deshacer</button>
   <button id="save" class="btn btn--primary">Guardar y regenerar</button>
   <button id="fs" class="btn btn--ghost">⛶ Pantalla completa</button>
   <label class="muted" style="font-size:13px">Grilla:
@@ -132,6 +133,16 @@
     selection.forEach(n => { if (n.el) n.el.style.outline = ''; });
     selection.clear();
   }
+
+  // --- historial (deshacer) ---
+  const history = [];
+  function snapshot() { return notes.map(n => ({ pitch: n.pitch, start: n.start, end: n.end, velocity: n.velocity })); }
+  function pushHistory() { history.push(snapshot()); if (history.length > 60) history.shift(); }
+  function undo() {
+    if (!history.length) { statusEl.textContent = 'nada para deshacer'; return; }
+    notes = history.pop(); selection.clear(); render(); dirty();
+    statusEl.textContent = 'deshecho';
+  }
   function gridBg() {
     // líneas verticales según la grilla + beat (negra) + compás (4/4), y octavas horizontales
     const beatPx = (60 / tempo) * PPS;
@@ -156,7 +167,7 @@
   }
   function layout() { computeLayout(); buildKeyboard(); render(); }
 
-  function removeNote(n, el) { el.remove(); notes = notes.filter(x => x !== n); dirty(); }
+  function removeNote(n, el) { pushHistory(); el.remove(); notes = notes.filter(x => x !== n); dirty(); }
   function dirty() { statusEl.textContent = 'sin guardar'; }
 
   let selBox = null, selStart = null;
@@ -176,6 +187,7 @@
     clearSelection();                               // click normal => agregar nota
     const t = snap(gx / PPS), p = pOf(gy);
     if (p < PLO || p > PHI) return;
+    pushHistory();
     const n = { pitch: p, start: t, end: t + (step() || 0.25), velocity: 80 };
     notes.push(n); grid.insertBefore(noteEl(n), playhead); dirty();
   });
@@ -205,21 +217,36 @@
   function startDrag(e, n, el) {
     e.preventDefault(); e.stopPropagation();
     const r = el.getBoundingClientRect(), resize = (e.clientX > r.right - 7);
-    drag = { n, el, resize, ox: e.clientX, oy: e.clientY, s0: n.start, e0: n.end, p0: n.pitch };
+    let group;
+    if (!resize && selection.has(n) && selection.size > 1) {   // arrastra el grupo seleccionado
+      group = [...selection].map(m => ({ m, s0: m.start, e0: m.end, p0: m.pitch }));
+    } else {
+      if (!selection.has(n)) clearSelection();
+      group = [{ m: n, s0: n.start, e0: n.end, p0: n.pitch }];
+    }
+    drag = { resize, moved: false, ox: e.clientX, oy: e.clientY, s0: n.start, e0: n.end, group };
     document.body.style.userSelect = 'none';
   }
   window.addEventListener('mousemove', e => {
     if (!drag) return;
-    const dx = (e.clientX - drag.ox) / PPS, dy = e.clientY - drag.oy, n = drag.n;
-    if (drag.resize) { n.end = Math.max(drag.s0 + 0.03, snap(drag.e0 + dx)); }
-    else {
-      n.start = Math.max(0, snap(drag.s0 + dx));
-      n.end = n.start + (drag.e0 - drag.s0);
-      n.pitch = Math.min(PHI, Math.max(PLO, drag.p0 - Math.round(dy / ROW)));
+    if (!drag.moved) { pushHistory(); drag.moved = true; }     // 1 undo por gesto de arrastre
+    const dx = (e.clientX - drag.ox) / PPS, dy = e.clientY - drag.oy;
+    if (drag.resize) {
+      const g = drag.group[0].m;
+      g.end = Math.max(drag.s0 + 0.03, snap(drag.e0 + dx));
+      if (g.el) place(g.el, g);
+    } else {
+      const dt = snap(drag.s0 + dx) - drag.s0;                 // delta de tiempo (snapeado)
+      const dp = Math.round(dy / ROW);                          // delta de semitonos
+      drag.group.forEach(o => {
+        o.m.start = Math.max(0, o.s0 + dt);
+        o.m.end = o.m.start + (o.e0 - o.s0);
+        o.m.pitch = Math.min(PHI, Math.max(PLO, o.p0 - dp));
+        if (o.m.el) place(o.m.el, o.m);
+      });
     }
-    place(drag.el, n);
   });
-  window.addEventListener('mouseup', () => { if (drag) { drag = null; document.body.style.userSelect = ''; dirty(); } });
+  window.addEventListener('mouseup', () => { if (drag) { if (drag.moved) dirty(); drag = null; document.body.style.userSelect = ''; } });
   notesEl.addEventListener('scroll', () => { keysEl.scrollTop = notesEl.scrollTop; });
   document.getElementById('grid-div').addEventListener('change', () => { grid.style.backgroundImage = gridBg(); });
 
@@ -227,6 +254,7 @@
   document.getElementById('quantize').addEventListener('click', () => {
     const s = step();
     if (!s) { statusEl.textContent = 'elegí una grilla (no "Libre") para ajustar'; return; }
+    pushHistory();
     const target = selection.size ? notes.filter(n => selection.has(n)) : notes;   // área o todo
     target.forEach(n => {
       const st = Math.round(n.start / s) * s;
@@ -303,11 +331,14 @@
 
   playBtn.addEventListener('click', startPlay);
   document.getElementById('rewind').addEventListener('click', () => seek(0));
+  document.getElementById('undo').addEventListener('click', undo);
   document.addEventListener('keydown', e => {
     const inField = /^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName);
-    if (e.code === 'Space' && !inField) { e.preventDefault(); startPlay(); }   // espacio = play/pausa
-    else if ((e.code === 'Delete' || e.code === 'Backspace') && !inField && selection.size) {
-      e.preventDefault();                          // Supr = borra el área seleccionada
+    if (inField) return;
+    if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') { e.preventDefault(); undo(); }   // Ctrl+Z
+    else if (e.code === 'Space') { e.preventDefault(); startPlay(); }                     // play/pausa
+    else if ((e.code === 'Delete' || e.code === 'Backspace') && selection.size) {
+      e.preventDefault(); pushHistory();           // Supr = borra el área seleccionada
       selection.forEach(n => { if (n.el) n.el.remove(); });
       notes = notes.filter(n => !selection.has(n));
       selection.clear(); dirty(); statusEl.textContent = 'notas borradas';
