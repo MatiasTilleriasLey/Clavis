@@ -12,7 +12,14 @@ $PIP install --no-build-isolation "pretty_midi==0.2.11" "mir_eval==0.8.2"
 $PIP install "librosa==0.11.0" "onnxruntime==1.27.0" "scipy" "resampy" "music21==10.5.0"
 $PIP install --no-deps "basic-pitch==0.4.0"
 
-echo "ML deps instaladas. Backend de inferencia: ONNX (sin TensorFlow)."
+# Demucs para separación de instrumentos. torch CPU-only (sin CUDA) porque no hay GPU dedicada.
+$PIP install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
+$PIP install demucs
+
+# Cola de jobs
+$PIP install "rq==2.6.0"
+
+echo "ML deps instaladas. Inferencia: ONNX. Separación: Demucs/torch CPU."
 
 # MuseScore 4 para export PDF (headless). El AppImage se extrae sin root ni FUSE.
 # Se usa MuseScore 4 (no 3.6.2) porque su AppImage incluye el plugin Qt offscreen.

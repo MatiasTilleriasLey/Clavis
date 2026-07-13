@@ -63,6 +63,7 @@ class Job(db.Model):
     rq_id = db.Column(db.String(64), nullable=True)  # id del job en RQ, para cancelar
     status = db.Column(db.String(16), nullable=False, default="queued")  # queued/started/finished/failed/canceled
     error = db.Column(db.String(64), nullable=True)  # código técnico sin contenido (§logging)
+    work_dir = db.Column(db.String(255), nullable=True)  # temp del job, se limpia al cancelar
     score_id = db.Column(db.Integer, db.ForeignKey("scores.id"), nullable=True)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now)
 

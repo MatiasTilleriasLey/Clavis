@@ -3,7 +3,7 @@ import tempfile
 import uuid
 
 from flask import (Blueprint, abort, flash, redirect, render_template,
-                   send_file, url_for)
+                   request, send_file, url_for)
 from flask_login import current_user
 from werkzeug.utils import secure_filename
 
@@ -48,12 +48,16 @@ def upload():
         flash("El archivo no parece un audio válido (MP3/WAV/M4A/MP4).")
         return redirect(url_for("auth.dashboard"))
 
+    # Instrumentos elegidos, filtrados contra la allowlist STEM_MAP (nada externo al subprocess).
+    from ..pipeline import STEM_MAP
+    stems = [s for s in request.form.getlist("stems") if s in STEM_MAP]
+
     title = (os.path.splitext(f.filename or "audio")[0] or "audio")[:200]  # solo display
     # work_dir persiste hasta que el worker termine y lo limpie (audio nunca se persiste).
     work_dir = tempfile.mkdtemp(prefix="clavis_")
     src = os.path.join(work_dir, f"{uuid.uuid4().hex}.{kind}")
     f.save(src)
-    job = enqueue_transcription(current_user.id, src, work_dir, title)
+    job = enqueue_transcription(current_user.id, src, work_dir, title, stems)
     return redirect(url_for("main.job_view", job_id=job.id))
 
 
@@ -78,6 +82,11 @@ def job_cancel(job_id):
     if job.status in ("queued", "started"):
         from ..jobs import _redis
         cancel_job(job, _redis())
+        # el SIGKILL al workhorse saltea el finally del job => limpiamos su temp acá
+        # para no dejar el audio en disco (§4.5, "el audio nunca se persiste").
+        if job.work_dir:
+            import shutil
+            shutil.rmtree(job.work_dir, ignore_errors=True)
         job.status = "canceled"
         db.session.commit()
     flash("Job cancelado.")

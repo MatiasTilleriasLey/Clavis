@@ -9,7 +9,7 @@ from rq import Queue
 
 from . import storage
 from .extensions import db
-from .pipeline import musicxml_to_pdf, transcribe  # patcheable en tests
+from .pipeline import musicxml_to_pdf, separate_stems, transcribe  # patcheable en tests
 
 QUEUE_NAME = "clavis"
 JOB_TIMEOUT = 1800  # 30 min duro por job (defensa DoS, refuerza el tope de duración del paso 12)
@@ -20,23 +20,25 @@ def _redis():
     return Redis.from_url(current_app.config["REDIS_URL"])
 
 
-def enqueue_transcription(user_id, audio_path, work_dir, title):
-    """Crea el Job en DB y lo encola (o lo corre inline si RQ_ASYNC=False, para tests)."""
+def enqueue_transcription(user_id, audio_path, work_dir, title, stems=None):
+    """Crea el Job en DB y lo encola (o lo corre inline si RQ_ASYNC=False, para tests).
+    `stems`: lista de instrumentos a separar; vacío => transcribe la mezcla completa."""
     from flask import current_app
     from .models import Job
 
-    job = Job(user_id=user_id, status="queued")
+    stems = stems or []
+    job = Job(user_id=user_id, status="queued", work_dir=work_dir)
     db.session.add(job)
     db.session.commit()
 
     if current_app.config.get("RQ_ASYNC", True):
         q = Queue(QUEUE_NAME, connection=_redis())
         rq_job = q.enqueue("app.jobs.transcribe_job", job.id, audio_path, work_dir,
-                           user_id, title, job_timeout=JOB_TIMEOUT)
+                           user_id, title, stems, job_timeout=JOB_TIMEOUT)
         job.rq_id = rq_job.id
         db.session.commit()
     else:
-        transcribe_job(job.id, audio_path, work_dir, user_id, title)
+        transcribe_job(job.id, audio_path, work_dir, user_id, title, stems)
     return job
 
 
@@ -55,20 +57,44 @@ def cancel(job, redis_conn):
             pass  # ya terminó o no existe; igual marcamos canceled abajo
 
 
-def transcribe_job(job_id, audio_path, work_dir, user_id, title):
+def transcribe_job(job_id, audio_path, work_dir, user_id, title, stems=None):
     """Corre en el worker (sin app context) o inline en tests (con app context)."""
     from flask import current_app, has_app_context
 
+    stems = stems or []
     if has_app_context():
-        return _run(job_id, audio_path, work_dir, user_id, title, current_app._get_current_object())
+        app = current_app._get_current_object()
+        return _run(job_id, audio_path, work_dir, user_id, title, stems, app)
     from app import create_app
     app = create_app()
     with app.app_context():
-        return _run(job_id, audio_path, work_dir, user_id, title, app)
+        return _run(job_id, audio_path, work_dir, user_id, title, stems, app)
 
 
-def _run(job_id, audio_path, work_dir, user_id, title, app):
-    from .models import Job, Score
+def _transcribe_one(wav, out_dir, instrument, title, user_id, app):
+    """Transcribe un WAV (mezcla o stem) -> crea y devuelve un Score (sin commit)."""
+    from .models import Score
+    xml = transcribe(wav, out_dir)
+    pdf = None
+    mscore = app.config.get("MSCORE_BIN")
+    if mscore:
+        try:
+            pdf = os.path.join(out_dir, "score.pdf")
+            musicxml_to_pdf(xml, pdf, mscore)
+        except Exception:
+            app.logger.warning("export PDF falló", exc_info=True)
+            pdf = None
+    stored = uuid.uuid4().hex
+    storage.save(user_id, stored, xml, pdf)
+    display = title if instrument == "mezcla" else f"{title} — {instrument}"
+    score = Score(user_id=user_id, title=display, instrument=instrument,
+                  stored_uuid=stored, has_pdf=pdf is not None)
+    db.session.add(score)
+    return score
+
+
+def _run(job_id, audio_path, work_dir, user_id, title, stems, app):
+    from .models import Job
     job = db.session.get(Job, job_id)
     if job is None or job.status == "canceled":
         shutil.rmtree(work_dir, ignore_errors=True)
@@ -76,24 +102,27 @@ def _run(job_id, audio_path, work_dir, user_id, title, app):
     job.status = "started"
     db.session.commit()
     try:
-        xml_path = transcribe(audio_path, work_dir)
-        pdf_path = None
-        mscore = app.config.get("MSCORE_BIN")
-        if mscore:
-            try:
-                pdf_path = os.path.join(work_dir, "score.pdf")
-                musicxml_to_pdf(xml_path, pdf_path, mscore)
-            except Exception:
-                app.logger.warning("export PDF falló", exc_info=True)
-                pdf_path = None
-        stored = uuid.uuid4().hex
-        storage.save(user_id, stored, xml_path, pdf_path)
-        score = Score(user_id=user_id, title=title, instrument="mezcla",
-                      stored_uuid=stored, has_pdf=pdf_path is not None)
-        db.session.add(score)
+        if stems:
+            stem_paths = separate_stems(audio_path, work_dir, stems)  # {instrumento: wav}
+            if not stem_paths:
+                raise RuntimeError("sin stems")
+            units = list(stem_paths.items())
+        else:
+            units = [("mezcla", audio_path)]
+
+        scores = []
+        for instrument, wav in units:
+            out_dir = os.path.join(work_dir, f"out_{instrument}")
+            os.makedirs(out_dir, exist_ok=True)
+            scores.append(_transcribe_one(wav, out_dir, instrument, title, user_id, app))
+            if wav != audio_path:
+                try:
+                    os.remove(wav)  # limpiar el stem WAV apenas se transcribió (§6.16)
+                except OSError:
+                    pass
         db.session.commit()
         job.status = "finished"
-        job.score_id = score.id
+        job.score_id = scores[0].id
         db.session.commit()
     except Exception:
         db.session.rollback()

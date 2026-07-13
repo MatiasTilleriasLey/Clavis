@@ -13,6 +13,23 @@
     <div class="field">
       <input type="file" name="audio" accept=".mp3,.wav,.m4a,.mp4" required>
     </div>
+    <fieldset style="border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px">
+      <legend class="label">Separar instrumentos (opcional)</legend>
+      <div id="stems" style="display:flex; flex-wrap:wrap; gap:12px">
+        {% for value, label in [('voz','Voz'),('bateria','Batería'),('bajo','Bajo'),
+                                ('guitarra','Guitarra'),('piano','Piano'),('otros','Otros')] %}
+        <label><input type="checkbox" name="stems" value="{{ value }}"> {{ label }}</label>
+        {% endfor %}
+      </div>
+      <button type="button" class="btn btn--ghost" style="margin-top:10px"
+              onclick="document.querySelectorAll('#stems input').forEach(function(c){c.checked=true})">
+        Extraer todos
+      </button>
+      <p class="muted" style="margin:8px 0 0; font-size:13px">
+        Sin selección: transcribe la mezcla completa. Con selección: separa y transcribe cada
+        instrumento por separado (más lento, sin GPU).
+      </p>
+    </fieldset>
     <button type="submit">Subir y transcribir</button>
   </form>
 </div>

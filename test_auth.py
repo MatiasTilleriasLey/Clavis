@@ -13,7 +13,7 @@ os.environ.setdefault("REDIS_URL", "redis://localhost:6379/0")
 from app import create_app  # noqa: E402
 from app.config import Config  # noqa: E402
 from app.extensions import db, mail  # noqa: E402
-from app.models import User  # noqa: E402
+from app.models import Job, Score, User  # noqa: E402
 
 
 class TestConfig(Config):
@@ -99,6 +99,22 @@ def run():
     r = up(client, b"RIFF\x24\x08\x00\x00WAVEfmt ", "song.wav")
     assert b"no parece un audio" not in r.data, "rechazó un WAV válido"
 
+    # 8a-bis. Separación por instrumento => un Score por stem elegido (paso 11).
+    def _fake_separate(audio_path, work_dir, stems):
+        out = {}
+        for ui in stems:
+            p = os.path.join(work_dir, f"{ui}.wav")
+            open(p, "wb").write(b"x")
+            out[ui] = p
+        return out
+    _jobs.separate_stems = _fake_separate
+    client.post("/upload", data={"audio": (BytesIO(b"RIFF\x24\x08\x00\x00WAVEfmt "), "mix.wav"),
+                "stems": ["voz", "piano"]}, content_type="multipart/form-data", follow_redirects=True)
+    with app.app_context():
+        aid = db.session.scalar(db.select(User.id).filter_by(email="a@x.com"))
+        insts = {s.instrument for s in db.session.scalars(db.select(Score).filter_by(user_id=aid))}
+    assert {"voz", "piano"} <= insts, f"no creó un Score por instrumento; hay {insts}"
+
     # 8b. Magic bytes mandan sobre la extensión: .wav con contenido no-audio => rechazado.
     r = up(client, b"<?xml version='1.0'?><x/>", "fake.wav")
     assert b"no parece un audio" in r.data, "aceptó un archivo por su extensión, no su contenido"
@@ -109,7 +125,6 @@ def run():
     assert r.status_code == 302 and "/login" in r.headers["Location"], "upload sin auth permitido"
 
     # --- IDOR / aislamiento multiusuario (paso 9, §4.8) ---
-    from app.models import Score
     with app.app_context():
         a = db.session.scalar(db.select(User).filter_by(email="a@x.com"))
         a_id = a.id
@@ -137,7 +152,6 @@ def run():
     assert client.get(f"/score/{sid}").status_code == 200, "A no accede a su propia partitura"
 
     # --- Ownership en cancelación de jobs (paso 10, §6.28) ---
-    from app.models import Job
     with app.app_context():
         j = Job(user_id=a_id, status="queued")
         db.session.add(j); db.session.commit()
@@ -180,7 +194,7 @@ def run():
                follow_redirects=True)
     assert b"Dashboard" in r.data, "la contraseña nueva no sirvió"
 
-    print("OK: auth + reset + upload + IDOR + jobs verificado (23 aserciones de seguridad)")
+    print("OK: auth + reset + upload + stems + IDOR + jobs verificado (24 aserciones)")
 
 
 if __name__ == "__main__":
