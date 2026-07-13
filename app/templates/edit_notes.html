@@ -27,6 +27,7 @@
   <button id="paste" class="btn btn--ghost" title="Pegar en el cabezal (Ctrl+V)">📋 Pegar</button>
   <button id="dup" class="btn btn--ghost" title="Duplicar (Ctrl+D)">⧉+ Duplicar</button>
   <button id="merge" class="btn btn--ghost" title="Fusionar notas del mismo tono contiguas en una sola">⇔ Fusionar</button>
+  <button id="eqvol" class="btn btn--ghost" title="Igualar el volumen de las notas seleccionadas">🔊 Igualar volumen</button>
   <button id="select-all" class="btn btn--ghost" title="Seleccionar todo (Ctrl+A)">Sel. todo</button>
   <span class="sep"></span>
   <button id="save" class="btn btn--primary">Guardar y regenerar</button>
@@ -506,6 +507,16 @@
     render(); dirty(); statusEl.textContent = merged + ' nota(s) fusionada(s)';
   }
 
+  // --- igualar el volumen de la selección (al promedio) ---
+  function equalizeVol() {
+    if (selection.size < 2) { statusEl.textContent = 'seleccioná 2+ notas'; return; }
+    const arr = [...selection];
+    const v = Math.round(arr.reduce((s, n) => s + n.velocity, 0) / arr.length);
+    pushHistory();
+    arr.forEach(n => { n.velocity = v; if (n.el) n.el.style.opacity = opacityFor(v); });
+    veloRender(); dirty(); statusEl.textContent = 'volumen igualado a ' + v;
+  }
+
   // --- transponer / mover selección ---
   function moveSel(dt, dp) {
     if (!selection.size) { statusEl.textContent = 'nada seleccionado'; return; }
@@ -642,6 +653,7 @@
   document.getElementById('paste').addEventListener('click', paste);
   document.getElementById('dup').addEventListener('click', duplicate);
   document.getElementById('merge').addEventListener('click', mergeSel);
+  document.getElementById('eqvol').addEventListener('click', equalizeVol);
   document.getElementById('select-all').addEventListener('click', selectAll);
   document.getElementById('brush').addEventListener('click', function () { this.classList.toggle('on'); });
   document.getElementById('zoom-in').addEventListener('click', () => zoomH(1.25, null));
