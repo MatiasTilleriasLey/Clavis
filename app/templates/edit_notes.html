@@ -7,8 +7,10 @@
 <p class="muted" style="font-size:13px; margin:4px 0 12px">
   Click = agregar · arrastrá = mover · borde derecho = alargar · doble-click = borrar ·
   click sobre una nota = seleccionarla (<strong>Ctrl+click</strong> suma/quita) ·
-  <strong>Shift+arrastrar</strong> = seleccionar área · <strong>Ctrl+rueda</strong> = zoom
-  (con Shift, vertical) · flechas mueven la selección. Al guardar se regenera la partitura,
+  <strong>Shift+arrastrar</strong> = seleccionar área · <strong>Alt</strong> mientras arrastrás
+  = mover/extender libre (ignora la grilla) · <strong>Ctrl+rueda</strong> = zoom (con Shift,
+  vertical) · flechas mueven la selección. Abajo: carriles de <strong>volumen</strong> (editable
+  en la nota seleccionada) y de <strong>pedal</strong>. Al guardar se regenera la partitura,
   el audio y el modo piano.
 </p>
 
@@ -24,6 +26,7 @@
   <button id="copy" class="btn btn--ghost" title="Copiar (Ctrl+C)">⧉ Copiar</button>
   <button id="paste" class="btn btn--ghost" title="Pegar en el cabezal (Ctrl+V)">📋 Pegar</button>
   <button id="dup" class="btn btn--ghost" title="Duplicar (Ctrl+D)">⧉+ Duplicar</button>
+  <button id="merge" class="btn btn--ghost" title="Fusionar notas del mismo tono contiguas en una sola">⇔ Fusionar</button>
   <button id="select-all" class="btn btn--ghost" title="Seleccionar todo (Ctrl+A)">Sel. todo</button>
   <span class="sep"></span>
   <button id="save" class="btn btn--primary">Guardar y regenerar</button>
@@ -74,8 +77,11 @@
     <div id="grid" style="position:relative"></div>
   </div>
 </div>
-<div id="velo-wrap" title="Dinámica (velocity): arrastrá cada barra para ajustar el volumen de la nota">
-  <div id="velo"></div>
+<div id="velo-wrap" title="Dinámica (volumen): arrastrá la barra de una nota seleccionada para ajustar su volumen">
+  <span class="lane-lbl">Volumen</span><div id="velo"></div>
+</div>
+<div id="pedal-wrap" title="Pedal de sustain: arrastrá en vacío para crear un pedal · arrastrá el borde para extenderlo · doble-click para borrarlo">
+  <span class="lane-lbl">Pedal</span><div id="pedal"></div>
 </div>
 </div>
 
@@ -89,8 +95,12 @@
   #velo-wrap { height:66px; margin-top:6px; padding-left:56px; overflow:hidden;
     border:1px solid var(--border); border-radius:8px; background:#0e1013; position:relative; }
   #velo { position:relative; height:64px; }
+  #pedal-wrap { height:34px; margin-top:6px; padding-left:56px; overflow:hidden;
+    border:1px solid var(--border); border-radius:8px; background:#0e1013; position:relative; }
+  #pedal { position:relative; height:32px; }
+  .lane-lbl { position:absolute; left:6px; top:4px; font-size:10px; color:#8a8f96; z-index:3; }
   #editor-wrap:fullscreen { background:var(--bg); padding:14px; overflow:auto; }
-  #editor-wrap:fullscreen #editor { height: calc(100vh - 190px); }
+  #editor-wrap:fullscreen #editor { height: calc(100vh - 250px); }
 </style>
 {% endblock %}
 
@@ -101,13 +111,14 @@
   const scoreId = {{ score.id }};
   const SOUNDFONT = {{ url_for('static', filename='soundfont') | tojson }};
   let PPS = 120;                                        // px/seg (zoom horizontal)
-  const PABS_MIN = 21, PABS_MAX = 108, RULER_H = 18, VH = 64;
+  const PABS_MIN = 21, PABS_MAX = 108, RULER_H = 18, VH = 64, PH = 32;
   const NAMES = ['C','C#','D','D#','E','F','F#','G','G#','A','A#','B'];
   const grid = document.getElementById('grid'), keysEl = document.getElementById('keys');
   const notesEl = document.getElementById('notes'), statusEl = document.getElementById('status');
   const velo = document.getElementById('velo'), playBtn = document.getElementById('play');
+  const ped = document.getElementById('pedal');
   const BLACK = {1:1,3:1,6:1,8:1,10:1};
-  let tempo = 120, notes = [], width = 2000;
+  let tempo = 120, notes = [], pedals = [], width = 2000;
   let PLO = 48, PHI = 84, ROW = 14, ROWS = 37, GRIDH = 518, rowOverride = 0;
   const selection = new Set();
   const noteName = p => NAMES[((p % 12) + 12) % 12] + (Math.floor(p / 12) - 1);
@@ -135,6 +146,7 @@
   function gridBeats() { return parseFloat(document.getElementById('grid-div').value); }
   function step() { const b = gridBeats(); return b ? (60 / tempo) * b : 0; }   // beats por celda
   function snap(t) { const s = step(); return s ? Math.round(t / s) * s : t; }
+  function snapV(alt, t) { return alt ? t : snap(t); }   // Alt = extender/mover libre (ignora grilla)
   function newLen() {                                   // largo de nota nueva (segundos)
     const v = document.getElementById('new-len').value;
     const b = v === '' ? gridBeats() : parseFloat(v);
@@ -189,25 +201,30 @@
     n.el = el; return el;
   }
 
-  // --- selección ---
-  function selAdd(n) { selection.add(n); if (n.el) n.el.style.outline = '2px solid #f59e0b'; }
-  function selDel(n) { selection.delete(n); if (n.el) n.el.style.outline = ''; }
-  function clearSelection() { selection.forEach(n => { if (n.el) n.el.style.outline = ''; }); selection.clear(); }
+  // --- selección (resalta la nota y su barra de volumen) ---
+  function selMark(n, on) {
+    const o = on ? '2px solid #f59e0b' : '';
+    if (n.el) n.el.style.outline = o;
+    if (n.velEl) { n.velEl.style.outline = o; n.velEl.style.opacity = on ? '1' : '.75'; }
+  }
+  function selAdd(n) { selection.add(n); selMark(n, true); }
+  function selDel(n) { selection.delete(n); selMark(n, false); }
+  function clearSelection() { selection.forEach(n => selMark(n, false)); selection.clear(); }
   function selectAll() { notes.forEach(selAdd); statusEl.textContent = notes.length + ' notas seleccionadas'; }
 
-  // --- historial (deshacer / rehacer) ---
+  // --- historial (deshacer / rehacer) — captura notas y pedales ---
   const history = [], redoStack = [];
-  function snapshot() { return notes.map(n => ({ pitch: n.pitch, start: n.start, end: n.end, velocity: n.velocity })); }
+  function snapNotes() { return notes.map(n => ({ pitch: n.pitch, start: n.start, end: n.end, velocity: n.velocity })); }
+  function snapshot() { return { notes: snapNotes(), pedals: pedals.map(p => ({ start: p.start, end: p.end })) }; }
   function pushHistory() { history.push(snapshot()); if (history.length > 80) history.shift(); redoStack.length = 0; }
+  function restore(st) { notes = st.notes; pedals = st.pedals; selection.clear(); render(); dirty(); }
   function undo() {
     if (!history.length) { statusEl.textContent = 'nada para deshacer'; return; }
-    redoStack.push(snapshot()); notes = history.pop(); selection.clear(); render(); dirty();
-    statusEl.textContent = 'deshecho';
+    redoStack.push(snapshot()); restore(history.pop()); statusEl.textContent = 'deshecho';
   }
   function redo() {
     if (!redoStack.length) { statusEl.textContent = 'nada para rehacer'; return; }
-    history.push(snapshot()); notes = redoStack.pop(); selection.clear(); render(); dirty();
-    statusEl.textContent = 'rehecho';
+    history.push(snapshot()); restore(redoStack.pop()); statusEl.textContent = 'rehecho';
   }
 
   // --- copiar / pegar / duplicar ---
@@ -260,7 +277,7 @@
     loopEl.style.height = GRIDH + 'px'; grid.appendChild(loopEl); updateLoop();
     playhead.style.height = GRIDH + 'px'; grid.appendChild(playhead);
     movePlayhead(playPos);
-    veloRender();
+    veloRender(); pedalRender();
   }
   function layout() { computeLayout(); buildKeyboard(); render(); }
 
@@ -271,19 +288,26 @@
     clearTimeout(draftT); draftT = setTimeout(saveDraft, 800);   // autosave local (sin regenerar)
   }
 
-  // --- carril de dinámica (velocity) ---
+  // --- carril de volumen (velocity): solo editable si la nota está seleccionada (o no hay selección) ---
   let veloDrag = null;
+  function veloBar(n) {
+    const sel = selection.has(n);
+    const b = document.createElement('div');
+    b.style.cssText = 'position:absolute;bottom:0;left:' + (n.start * PPS) + 'px;width:' +
+      Math.max(2, (n.end - n.start) * PPS) + 'px;height:' + Math.max(2, n.velocity / 127 * VH) +
+      'px;background:#2DD4BF;opacity:' + (sel ? '1' : '.75') + ';cursor:ns-resize' +
+      (sel ? ';outline:2px solid #f59e0b' : '');
+    b.addEventListener('mousedown', e => {
+      e.preventDefault(); e.stopPropagation();
+      if (selection.size && !selection.has(n)) { statusEl.textContent = 'seleccioná esa nota para cambiar su volumen'; return; }
+      pushHistory(); veloDrag = n;
+    });
+    n.velEl = b; return b;
+  }
   function veloRender() {
     velo.innerHTML = ''; velo.style.width = width + 'px';
     velo.style.transform = 'translateX(' + (-notesEl.scrollLeft) + 'px)';
-    notes.forEach(n => {
-      const b = document.createElement('div');
-      b.style.cssText = 'position:absolute;bottom:0;left:' + (n.start * PPS) + 'px;width:' +
-        Math.max(2, (n.end - n.start) * PPS) + 'px;height:' + Math.max(2, n.velocity / 127 * VH) +
-        'px;background:#2DD4BF;opacity:.75;cursor:ns-resize';
-      b.addEventListener('mousedown', e => { e.preventDefault(); e.stopPropagation(); pushHistory(); veloDrag = n; });
-      velo.appendChild(b);
-    });
+    notes.forEach(n => velo.appendChild(veloBar(n)));
   }
   window.addEventListener('mousemove', e => {
     if (!veloDrag) return;
@@ -291,10 +315,52 @@
     let v = Math.round((1 - (e.clientY - r.top) / VH) * 127);
     v = Math.max(1, Math.min(127, v));
     veloDrag.velocity = v;
+    if (veloDrag.velEl) veloDrag.velEl.style.height = Math.max(2, v / 127 * VH) + 'px';
     if (veloDrag.el) veloDrag.el.style.opacity = opacityFor(v);
-    veloRender(); statusEl.textContent = 'velocity ' + v;
+    statusEl.textContent = 'volumen ' + v;
   });
   window.addEventListener('mouseup', () => { if (veloDrag) { veloDrag = null; dirty(); } });
+
+  // --- carril de pedal de sustain (CC64): crear/mover/extender/borrar rangos ---
+  let pedDrag = null;
+  function pedalRender() {
+    ped.innerHTML = ''; ped.style.width = width + 'px';
+    ped.style.transform = 'translateX(' + (-notesEl.scrollLeft) + 'px)';
+    pedals.forEach(p => {
+      const b = document.createElement('div');
+      b.style.cssText = 'position:absolute;top:3px;bottom:3px;left:' + (p.start * PPS) + 'px;width:' +
+        Math.max(3, (p.end - p.start) * PPS) + 'px;background:#a78bfa;opacity:.85;border:1px solid #7c3aed;' +
+        'border-radius:3px;box-sizing:border-box;cursor:grab';
+      b.title = 'Pedal ' + p.start.toFixed(2) + '–' + p.end.toFixed(2) + 's · borde derecho = extender · doble-click = borrar';
+      b.addEventListener('mousedown', e => startPedDrag(e, p, b));
+      b.addEventListener('dblclick', e => { e.stopPropagation(); pushHistory(); pedals = pedals.filter(x => x !== p); pedalRender(); dirty(); statusEl.textContent = 'pedal borrado'; });
+      ped.appendChild(b);
+    });
+  }
+  ped.addEventListener('mousedown', e => {
+    if (e.target !== ped) return;                    // arrastrar en vacío => crear un pedal
+    const r = ped.getBoundingClientRect(), t = snapV(e.altKey, (e.clientX - r.left) / PPS);
+    pushHistory();
+    const p = { start: t, end: t + (step() || 0.25) };
+    pedals.push(p); pedalRender();
+    pedDrag = { p, mode: 'resize', ox: e.clientX, s0: p.start, e0: p.end };
+    document.body.style.userSelect = 'none';
+  });
+  function startPedDrag(e, p, b) {
+    e.preventDefault(); e.stopPropagation();
+    const r = b.getBoundingClientRect(), mode = (e.clientX > r.right - 8) ? 'resize' : 'move';
+    pushHistory();
+    pedDrag = { p, mode, ox: e.clientX, s0: p.start, e0: p.end };
+    document.body.style.userSelect = 'none';
+  }
+  window.addEventListener('mousemove', e => {
+    if (!pedDrag) return;
+    const dx = (e.clientX - pedDrag.ox) / PPS, p = pedDrag.p;
+    if (pedDrag.mode === 'resize') p.end = Math.max(pedDrag.s0 + 0.05, snapV(e.altKey, pedDrag.e0 + dx));
+    else { const dt = snapV(e.altKey, pedDrag.s0 + dx) - pedDrag.s0; p.start = Math.max(0, pedDrag.s0 + dt); p.end = pedDrag.e0 + dt; }
+    pedalRender();
+  });
+  window.addEventListener('mouseup', () => { if (pedDrag) { pedDrag = null; dirty(); document.body.style.userSelect = ''; } });
 
   // --- agregar / seleccionar área / pincel ---
   let selBox = null, selStart = null, brushing = false;
@@ -317,12 +383,12 @@
     clearSelection();
     pushHistory();
     if (document.getElementById('brush').classList.contains('on')) { brushing = true; }
-    addNote(snap(gx / PPS), pOf(gy)); dirty();
+    addNote(snapV(e.altKey, gx / PPS), pOf(gy)); dirty();
   });
   window.addEventListener('mousemove', e => {
     if (brushing) {
       const r = grid.getBoundingClientRect();
-      addNote(snap((e.clientX - r.left) / PPS), pOf(e.clientY - r.top)); dirty(); return;
+      addNote(snapV(e.altKey, (e.clientX - r.left) / PPS), pOf(e.clientY - r.top)); dirty(); return;
     }
     if (!selBox) return;
     const r = grid.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
@@ -355,22 +421,17 @@
     if (!drag.moved) {                              // primer movimiento: 1 undo + arma el grupo
       pushHistory(); drag.moved = true;
       const n = drag.n;
-      if (drag.resize) drag.group = [{ m: n, s0: n.start, e0: n.end, p0: n.pitch }];
-      else {
-        if (!selection.has(n) && !drag.ctrl) clearSelection();
-        if (!selection.has(n)) selAdd(n);
-        const set = selection.size > 1 ? [...selection] : [n];
-        drag.group = set.map(m => ({ m, s0: m.start, e0: m.end, p0: m.pitch }));
-      }
+      // resize o move: si la nota está dentro de una selección múltiple, afecta a todas
+      const set = (selection.has(n) && selection.size > 1) ? [...selection] : [n];
+      if (!drag.resize && !selection.has(n) && !drag.ctrl) { clearSelection(); selAdd(n); }
+      drag.group = set.map(m => ({ m, s0: m.start, e0: m.end, p0: m.pitch }));
     }
     const dx = (e.clientX - drag.ox) / PPS, dy = e.clientY - drag.oy;
-    if (drag.resize) {
-      const g = drag.group[0].m;
-      g.end = Math.max(drag.s0 + 0.03, snap(drag.e0 + dx));
-      if (g.el) place(g.el, g);
-      showTip(e, noteName(g.pitch) + '  ' + (g.end - g.start).toFixed(2) + 's');
+    if (drag.resize) {                              // extender el fin (Alt = libre; si no, a la grilla)
+      drag.group.forEach(o => { o.m.end = Math.max(o.s0 + 0.03, snapV(e.altKey, o.e0 + dx)); if (o.m.el) place(o.m.el, o.m); });
+      showTip(e, noteName(drag.n.pitch) + '  ' + (drag.n.end - drag.n.start).toFixed(2) + 's');
     } else {
-      const dt = snap(drag.s0 + dx) - drag.s0, dp = Math.round(dy / ROW);
+      const dt = snapV(e.altKey, drag.s0 + dx) - drag.s0, dp = Math.round(dy / ROW);
       drag.group.forEach(o => {
         o.m.start = Math.max(0, o.s0 + dt);
         o.m.end = o.m.start + (o.e0 - o.s0);
@@ -402,6 +463,7 @@
   notesEl.addEventListener('scroll', () => {
     keysEl.scrollTop = notesEl.scrollTop;
     velo.style.transform = 'translateX(' + (-notesEl.scrollLeft) + 'px)';
+    ped.style.transform = 'translateX(' + (-notesEl.scrollLeft) + 'px)';
   });
   document.getElementById('grid-div').addEventListener('change', () => { grid.style.backgroundImage = gridBg(); });
 
@@ -419,6 +481,30 @@
     dirty(); veloRender();
     statusEl.textContent = (selection.size ? selection.size + ' notas' : 'todas') + ' ajustadas a la grilla';
   });
+
+  // --- fusionar notas del mismo tono contiguas en una sola ---
+  function mergeSel() {
+    if (selection.size < 2) { statusEl.textContent = 'seleccioná 2+ notas del mismo tono'; return; }
+    const tol = Math.max(0.03, (step() || 0) * 0.55);   // "una al lado de la otra" (tolera huequito)
+    const byPitch = {};
+    [...selection].forEach(n => { (byPitch[n.pitch] = byPitch[n.pitch] || []).push(n); });
+    pushHistory();
+    const remove = new Set(); let merged = 0;
+    Object.values(byPitch).forEach(arr => {
+      arr.sort((a, b) => a.start - b.start);
+      let cur = arr[0];
+      for (let i = 1; i < arr.length; i++) {
+        const nx = arr[i];
+        if (nx.start <= cur.end + tol) {   // contigua/solapada => absorber
+          cur.end = Math.max(cur.end, nx.end); cur.velocity = Math.max(cur.velocity, nx.velocity);
+          remove.add(nx); merged++;
+        } else cur = nx;
+      }
+    });
+    if (!merged) { history.pop(); statusEl.textContent = 'no hay notas del mismo tono contiguas'; return; }
+    notes = notes.filter(n => !remove.has(n)); remove.forEach(n => selection.delete(n));
+    render(); dirty(); statusEl.textContent = merged + ' nota(s) fusionada(s)';
+  }
 
   // --- transponer / mover selección ---
   function moveSel(dt, dp) {
@@ -555,6 +641,7 @@
   document.getElementById('copy').addEventListener('click', copy);
   document.getElementById('paste').addEventListener('click', paste);
   document.getElementById('dup').addEventListener('click', duplicate);
+  document.getElementById('merge').addEventListener('click', mergeSel);
   document.getElementById('select-all').addEventListener('click', selectAll);
   document.getElementById('brush').addEventListener('click', function () { this.classList.toggle('on'); });
   document.getElementById('zoom-in').addEventListener('click', () => zoomH(1.25, null));
@@ -613,17 +700,17 @@
 
   // --- borrador local (sobrevive recargas sin regenerar la partitura) ---
   const DRAFT_KEY = 'clavis_draft_' + scoreId;
-  function saveDraft() { try { localStorage.setItem(DRAFT_KEY, JSON.stringify({ tempo, notes: snapshot() })); } catch (e) {} }
+  function saveDraft() { try { const s = snapshot(); localStorage.setItem(DRAFT_KEY, JSON.stringify({ tempo, notes: s.notes, pedals: s.pedals })); } catch (e) {} }
   function clearDraft() { try { localStorage.removeItem(DRAFT_KEY); } catch (e) {} }
 
   // --- cargar / guardar ---
   fetch('/score/' + scoreId + '/notes', { headers: { 'Accept': 'application/json' } })
     .then(r => r.json()).then(d => {
-      tempo = d.tempo || 120; notes = d.notes || [];
+      tempo = d.tempo || 120; notes = d.notes || []; pedals = d.pedals || [];
       let draft = null;
       try { draft = JSON.parse(localStorage.getItem(DRAFT_KEY) || 'null'); } catch (e) {}
       if (draft && draft.notes && confirm('Hay cambios sin guardar de una sesión anterior. ¿Restaurarlos?')) {
-        tempo = draft.tempo || tempo; notes = draft.notes;
+        tempo = draft.tempo || tempo; notes = draft.notes; pedals = draft.pedals || [];
       }
       bpmEl.value = Math.round(tempo);
       width = Math.max(2000, songEnd() * PPS + 600);
@@ -632,8 +719,9 @@
 
   document.getElementById('save').addEventListener('click', function () {
     const btn = this; btn.disabled = true; statusEl.textContent = 'guardando y regenerando…';
-    const payload = { tempo, notes: notes.map(n =>
-      ({ pitch: n.pitch, start: +n.start.toFixed(4), end: +n.end.toFixed(4), velocity: n.velocity })) };
+    const payload = { tempo,
+      notes: notes.map(n => ({ pitch: n.pitch, start: +n.start.toFixed(4), end: +n.end.toFixed(4), velocity: n.velocity })),
+      pedals: pedals.map(p => ({ start: +p.start.toFixed(4), end: +p.end.toFixed(4) })) };
     fetch('/score/' + scoreId + '/notes', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content },

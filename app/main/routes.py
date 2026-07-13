@@ -256,12 +256,21 @@ def score_save_notes(score_id):
         if 0 <= p <= 127 and s >= 0 and 0 < e - s <= 60 and 1 <= v <= 127:
             notes.append({"pitch": p, "start": s, "end": e, "velocity": v})
 
+    pedals = []
+    for pd in (data.get("pedals") or [])[:10000]:  # rangos de pedal de sustain
+        try:
+            s, e = float(pd["start"]), float(pd["end"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if s >= 0 and 0 < e - s <= 600:
+            pedals.append({"start": s, "end": e})
+
     import shutil
     from ..pipeline import midi_to_score, notes_to_midi
     work = tempfile.mkdtemp(prefix="clavis_")
     try:
         src = os.path.join(work, "edit.mid")
-        notes_to_midi(notes, tempo, src)
+        notes_to_midi(notes, tempo, src, pedals)
         mscore = current_app.config.get("MSCORE_BIN")
         xml, pdf = midi_to_score(src, work, title=score.title, mscore_bin=mscore)
         midi = os.path.join(work, "notes.mid")

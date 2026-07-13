@@ -77,6 +77,8 @@ def _consolidate_midi(midi_path, bpm=None):
     out = pretty_midi.PrettyMIDI(initial_tempo=float(bpm) or 120.0)
     piano = pretty_midi.Instrument(program=0, name="Piano")
     piano.notes = notes
+    for inst in pm.instruments:  # preservar pedal (CC64) y demás control changes
+        piano.control_changes.extend(inst.control_changes)
     out.instruments.append(piano)
     out.write(midi_path)
 
@@ -95,11 +97,27 @@ def midi_notes(midi_path):
               "velocity": n.velocity}
              for inst in pm.instruments for n in inst.notes]
     notes.sort(key=lambda n: (n["start"], n["pitch"]))
-    return {"tempo": tempo, "notes": notes}
+
+    # pedal de sustain (CC64): construir rangos [start,end] a partir de los eventos on/off
+    cc = sorted((c for inst in pm.instruments for c in inst.control_changes if c.number == 64),
+                key=lambda c: c.time)
+    end_of_song = max((n["end"] for n in notes), default=0.0)
+    pedals, down = [], None
+    for c in cc:
+        if c.value >= 64 and down is None:
+            down = round(float(c.time), 4)
+        elif c.value < 64 and down is not None:
+            pedals.append({"start": down, "end": round(float(c.time), 4)})
+            down = None
+    if down is not None:
+        pedals.append({"start": down, "end": round(float(end_of_song), 4)})
+
+    return {"tempo": tempo, "notes": notes, "pedals": pedals}
 
 
-def notes_to_midi(notes, tempo, midi_path):
-    """Escribe una pista de piano desde la lista de notas editada en el editor."""
+def notes_to_midi(notes, tempo, midi_path, pedals=None):
+    """Escribe una pista de piano desde la lista de notas editada en el editor.
+    pedals: lista de rangos {start,end} del pedal de sustain (se escriben como CC64 on/off)."""
     import pretty_midi
     pm = pretty_midi.PrettyMIDI(initial_tempo=float(tempo) or 120.0)
     ins = pretty_midi.Instrument(program=0, name="Piano")
@@ -107,6 +125,9 @@ def notes_to_midi(notes, tempo, midi_path):
         ins.notes.append(pretty_midi.Note(
             velocity=int(n["velocity"]), pitch=int(n["pitch"]),
             start=float(n["start"]), end=float(n["end"])))
+    for p in pedals or []:
+        ins.control_changes.append(pretty_midi.ControlChange(number=64, value=127, time=float(p["start"])))
+        ins.control_changes.append(pretty_midi.ControlChange(number=64, value=0, time=float(p["end"])))
     pm.instruments.append(ins)
     pm.write(midi_path)
 
