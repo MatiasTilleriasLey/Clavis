@@ -20,6 +20,10 @@ class Config:
     # Binario de MuseScore (AppRun del AppImage extraído) para export PDF. Ver scripts/install_ml.sh.
     MSCORE_BIN = os.environ.get("MSCORE_BIN")
 
+    # Storage de partituras (fuera de static; acceso solo por endpoints con ownership).
+    STORAGE_ROOT = os.environ.get("STORAGE_ROOT") or os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "storage")
+
     # Cookies de sesión endurecidas (threat model §6.20). Secure exige TLS, que ya usamos.
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SECURE = True

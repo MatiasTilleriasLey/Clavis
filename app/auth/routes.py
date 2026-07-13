@@ -149,6 +149,8 @@ def unverified():
 @bp.get("/dashboard")
 @verified_required
 def dashboard():
-    # ponytail: placeholder protegido para validar el gate de auth+verificación.
-    # El dashboard real (listado de partituras) llega en pasos posteriores.
-    return render_template("dashboard.html")
+    from ..models import Score
+    # Listado filtrado server-side por el usuario de la sesión (nunca todo + filtro en front, §4.8).
+    scores = (Score.query.filter_by(user_id=current_user.id)
+              .order_by(Score.created_at.desc()).all())
+    return render_template("dashboard.html", scores=scores)

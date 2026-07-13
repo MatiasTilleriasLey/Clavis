@@ -35,6 +35,23 @@ class User(UserMixin, db.Model):
             return False
 
 
+class Score(db.Model):
+    """Partitura generada, asociada a un usuario. Los archivos viven en el filesystem bajo
+    el user_id y se sirven SOLO por endpoints que verifican ownership (§4.8, §6.25)."""
+
+    __tablename__ = "scores"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    title = db.Column(db.String(200), nullable=False)          # solo display (Jinja escapa)
+    instrument = db.Column(db.String(40), nullable=False, default="mezcla")
+    stored_uuid = db.Column(db.String(32), unique=True, nullable=False)  # nombre en disco (§6.6)
+    has_pdf = db.Column(db.Boolean, nullable=False, default=False)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now)
+
+    user = db.relationship("User")
+
+
 class EmailToken(db.Model):
     """Token de un solo uso para verificación de email y reseteo de contraseña.
     En DB se guarda solo el hash del token; el valor plano viaja únicamente en el mail."""

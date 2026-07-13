@@ -2,6 +2,7 @@
 o directamente .venv/bin/python test_auth.py (usa asserts, sin framework obligatorio)."""
 import os
 import re
+import tempfile
 from io import BytesIO
 
 # Config mínima para importar app.config sin un .env real.
@@ -21,6 +22,8 @@ class TestConfig(Config):
     WTF_CSRF_ENABLED = False               # CSRF es responsabilidad de Flask-WTF, no del test
     RATELIMIT_ENABLED = False
     SESSION_COOKIE_SECURE = False          # el test client habla http, no TLS
+    STORAGE_ROOT = tempfile.mkdtemp()
+    MSCORE_BIN = None                      # sin PDF en el test
 
 
 def _token_from_outbox(outbox, path="verify"):
@@ -91,9 +94,9 @@ def run():
         return cl.post("/upload", data={"audio": (BytesIO(data), name)},
                        content_type="multipart/form-data", follow_redirects=True)
 
-    # 8a. Magic bytes de WAV válidos => transcribe y renderiza la partitura (OSMD).
+    # 8a. Magic bytes de WAV válidos => transcribe, persiste y muestra la partitura (OSMD).
     r = up(client, b"RIFF\x24\x08\x00\x00WAVEfmt ", "song.wav")
-    assert b"osmd" in r.data, "no renderizó el resultado de un WAV válido"
+    assert b"osmd" in r.data, "no mostró la partitura de un WAV válido"
 
     # 8b. Magic bytes mandan sobre la extensión: .wav con contenido no-audio => rechazado.
     r = up(client, b"<?xml version='1.0'?><x/>", "fake.wav")
@@ -103,6 +106,33 @@ def run():
     r = app.test_client().post("/upload", data={"audio": (BytesIO(b"RIFF...WAVE.."), "x.wav")},
                                content_type="multipart/form-data")
     assert r.status_code == 302 and "/login" in r.headers["Location"], "upload sin auth permitido"
+
+    # --- IDOR / aislamiento multiusuario (paso 9, §4.8) ---
+    from app.models import Score
+    with app.app_context():
+        a = db.session.scalar(db.select(User).filter_by(email="a@x.com"))
+        score = db.session.scalar(db.select(Score).filter_by(user_id=a.id))
+        assert score is not None, "el upload no persistió la partitura"
+        sid = score.id
+        # crear usuario B verificado directamente
+        b = User(email="b@x.com", email_verified=True); b.set_password("clave1234")
+        db.session.add(b); db.session.commit()
+
+    cb = app.test_client()
+    cb.post("/login", data={"email": "b@x.com", "password": "clave1234"})
+
+    # 9a. B no puede VER la partitura de A.
+    assert cb.get(f"/score/{sid}").status_code == 404, "IDOR: B vio la partitura de A"
+    # 9b. B no puede descargar el MusicXML de A.
+    assert cb.get(f"/score/{sid}/musicxml").status_code == 404, "IDOR: B bajó el MusicXML de A"
+    # 9c. B no puede BORRAR la partitura de A (y sigue existiendo).
+    assert cb.post(f"/score/{sid}/delete").status_code == 404, "IDOR: B borró la de A"
+    with app.app_context():
+        assert db.session.get(Score, sid) is not None, "la partitura de A fue borrada por B"
+    # 9d. El dashboard de B no lista la partitura de A.
+    assert b"song" not in cb.get("/dashboard").data, "el listado de B incluyó la de A"
+    # 9e. A sí accede a la suya.
+    assert client.get(f"/score/{sid}").status_code == 200, "A no accede a su propia partitura"
 
     # --- Reseteo de contraseña (paso 3) ---
     anon = app.test_client()  # sin sesión: forgot-password redirige si estás logueado
@@ -135,7 +165,7 @@ def run():
                follow_redirects=True)
     assert b"Dashboard" in r.data, "la contraseña nueva no sirvió"
 
-    print("OK: flujo de auth + reset + upload verificado (15 aserciones de seguridad)")
+    print("OK: auth + reset + upload + IDOR verificado (20 aserciones de seguridad)")
 
 
 if __name__ == "__main__":

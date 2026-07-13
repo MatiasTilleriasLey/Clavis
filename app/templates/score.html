@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block title %}{{ score.title }} — Clavis{% endblock %}
+{% block content %}
+<span class="label">Partitura · {{ score.instrument }}</span>
+<h1 class="hero__title" style="font-size:32px">{{ score.title }}</h1>
+<p class="links">
+  <a href="{{ url_for('auth.dashboard') }}">← Dashboard</a>
+  {% if score.has_pdf %} · <a href="{{ url_for('main.score_pdf', score_id=score.id) }}">Descargar PDF</a>{% endif %}
+</p>
+<div class="card" style="background:#fff; overflow-x:auto">
+  <div id="osmd"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/opensheetmusicdisplay.min.js') }}"></script>
+<script>
+  (function () {
+    // OSMD hace fetch del MusicXML desde el endpoint con ownership (misma sesión).
+    var url = {{ url_for('main.score_musicxml', score_id=score.id) | tojson }};
+    var osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay('osmd', {
+      autoResize: true, backend: 'svg', drawTitle: false
+    });
+    osmd.load(url).then(function () { osmd.render(); });
+  })();
+</script>
+{% endblock %}

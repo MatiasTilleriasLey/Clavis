@@ -13,14 +13,32 @@
     <div class="field">
       <input type="file" name="audio" accept=".mp3,.wav,.m4a,.mp4" required>
     </div>
-    <button type="submit">Subir</button>
+    <button type="submit">Subir y transcribir</button>
   </form>
 </div>
 
-<div class="card">
-  <div class="empty">
-    <p>Todavía no tenés partituras.</p>
-    <p class="muted">Se listarán acá cuando el pipeline de transcripción esté activo.</p>
+{% if scores %}
+  <div class="grid">
+    {% for s in scores %}
+    <div class="card">
+      <span class="label">{{ s.instrument }}</span>
+      <h3>{{ s.title }}</h3>
+      <p class="links">
+        <a href="{{ url_for('main.score_view', score_id=s.id) }}">Ver partitura</a>
+        {% if s.has_pdf %} · <a href="{{ url_for('main.score_pdf', score_id=s.id) }}">PDF</a>{% endif %}
+      </p>
+      <form method="post" action="{{ url_for('main.score_delete', score_id=s.id) }}"
+            onsubmit="return confirm('¿Borrar esta partitura?')" style="margin-top:8px">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn--ghost">Borrar</button>
+      </form>
+    </div>
+    {% endfor %}
   </div>
-</div>
+{% else %}
+  <div class="card"><div class="empty">
+    <p>Todavía no tenés partituras.</p>
+    <p class="muted">Subí un audio para generar la primera.</p>
+  </div></div>
+{% endif %}
 {% endblock %}
