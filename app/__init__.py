@@ -2,6 +2,7 @@ import click
 import redis
 from flask import (Flask, abort, flash, redirect, render_template, request,
                    url_for)
+from flask_login import current_user
 from sqlalchemy import text
 
 from .config import Config
@@ -69,6 +70,8 @@ def create_app(config_object=Config):
 
     @app.get("/")
     def index():
+        if current_user.is_authenticated:
+            return redirect(url_for("auth.dashboard"))  # sesión abierta => al dashboard
         return render_template("index.html")  # landing pública (dentro de la VPN)
 
     @app.get("/health")
