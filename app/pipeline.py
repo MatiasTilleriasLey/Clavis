@@ -105,6 +105,26 @@ def _set_musicxml_metadata(xml_path, title, composer, arranger):
     open(xml_path, "w", encoding="utf-8").write(txt)
 
 
+def _lock_clefs(xml_path):
+    """Fija clave de sol arriba y clave de fa abajo en el gran pentagrama, quitando los
+    cambios de clave automáticos que mete MuseScore (confunden más de lo que ayudan)."""
+    import re
+    canon = {"1": '<clef number="1"><sign>G</sign><line>2</line></clef>',
+             "2": '<clef number="2"><sign>F</sign><line>4</line></clef>'}
+    seen = set()
+
+    def repl(m):
+        n = m.group(1)
+        if n in seen:
+            return ""  # elimina cambios de clave posteriores
+        seen.add(n)
+        return canon.get(n, m.group(0))  # fuerza la clave canónica en la primera aparición
+
+    txt = open(xml_path, encoding="utf-8").read()
+    txt = re.sub(r'<clef number="(\d)">.*?</clef>', repl, txt, flags=re.S)
+    open(xml_path, "w", encoding="utf-8").write(txt)
+
+
 def apply_metadata(xml_path, pdf_path, title, composer, arranger, mscore_bin):
     """Edita la metadata del MusicXML guardado y regenera el PDF (si hay MuseScore)."""
     _set_musicxml_metadata(xml_path, title, composer, arranger)
@@ -150,6 +170,7 @@ def transcribe(audio_path, work_dir, title="", mscore_bin=None):
     if not mscore_bin:
         raise RuntimeError("MuseScore es requerido para generar la partitura (configurar MSCORE_BIN)")
     _run_mscore(mscore_bin, midi, xml)          # MIDI -> MusicXML (gran pentagrama)
+    _lock_clefs(xml)                            # clave de sol arriba / fa abajo, sin cambios
     _set_musicxml_metadata(xml, title, "", "")  # título de la canción
-    _run_mscore(mscore_bin, xml, pdf)           # MusicXML (con título) -> PDF
+    _run_mscore(mscore_bin, xml, pdf)           # MusicXML (final) -> PDF
     return xml, pdf
