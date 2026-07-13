@@ -20,9 +20,12 @@
   <button id="fs" class="btn btn--ghost">⛶ Pantalla completa</button>
   <label class="muted" style="font-size:13px">Grilla:
     <select id="grid-div" style="width:auto; display:inline-block; padding:4px 8px">
-      <option value="1">Negra</option><option value="2">Corchea</option>
-      <option value="4" selected>Semicorchea</option><option value="8">Fusa</option>
-      <option value="16">Semifusa</option><option value="0">Libre</option>
+      <option value="4">Redonda ○</option><option value="3">Blanca con puntillo</option>
+      <option value="2">Blanca</option><option value="1.5">Negra con puntillo</option>
+      <option value="1">Negra</option><option value="0.75">Corchea con puntillo</option>
+      <option value="0.5">Corchea</option><option value="0.375">Semicorchea con puntillo</option>
+      <option value="0.25" selected>Semicorchea</option><option value="0.125">Fusa</option>
+      <option value="0.0625">Semifusa</option><option value="0">Libre</option>
     </select>
   </label>
   <button id="quantize" class="btn btn--ghost" title="Ajustar todas las notas a la celda más cercana">
@@ -78,7 +81,7 @@
     seek(Math.max(0, (e.clientX - r.left) / PPS));
   });
 
-  function step() { const d = parseInt(document.getElementById('grid-div').value, 10); return d ? (60 / tempo) / d : 0; }
+  function step() { const b = parseFloat(document.getElementById('grid-div').value); return b ? (60 / tempo) * b : 0; }  // valor = beats por celda
   function snap(t) { const s = step(); return s ? Math.round(t / s) * s : t; }
   const yOf = p => RULER_H + (PHI - p) * ROW;                 // las notas arrancan bajo la regla
   const pOf = y => PHI - Math.floor((y - RULER_H) / ROW);
@@ -146,8 +149,8 @@
   function gridBg() {
     // líneas verticales según la grilla + beat (negra) + compás (4/4), y octavas horizontales
     const beatPx = (60 / tempo) * PPS;
-    const d = parseInt(document.getElementById('grid-div').value, 10);
-    const subPx = d ? beatPx / d : 0;
+    const b = parseFloat(document.getElementById('grid-div').value);
+    const subPx = b ? beatPx * b : 0;
     const vline = (px, color) =>
       'repeating-linear-gradient(90deg,' + color + ' 0,' + color + ' 1px,transparent 1px,transparent ' + px + 'px)';
     const layers = [vline(beatPx * 4, '#3a3f47'), vline(beatPx, '#262a30')];   // compás, beat
