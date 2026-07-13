@@ -13,6 +13,7 @@
 <div id="editor-wrap">
 <div style="display:flex; gap:12px; align-items:center; margin-bottom:10px; flex-wrap:wrap">
   <button id="play" class="btn btn--ghost">▶ Reproducir</button>
+  <button id="rewind" class="btn btn--ghost" title="Volver al inicio">⏮ Desde el inicio</button>
   <button id="save" class="btn btn--primary">Guardar y regenerar</button>
   <button id="fs" class="btn btn--ghost">⛶ Pantalla completa</button>
   <label class="muted" style="font-size:13px">Grilla:
@@ -49,7 +50,7 @@
 (function () {
   const scoreId = {{ score.id }};
   const SOUNDFONT = {{ url_for('static', filename='soundfont') | tojson }};
-  const PPS = 120, PABS_MIN = 21, PABS_MAX = 108;   // px por segundo, rango físico del piano
+  const PPS = 120, PABS_MIN = 21, PABS_MAX = 108, RULER_H = 18;   // px/seg, rango, alto de la regla
   const grid = document.getElementById('grid'), keysEl = document.getElementById('keys');
   const notesEl = document.getElementById('notes'), statusEl = document.getElementById('status');
   const playBtn = document.getElementById('play');
@@ -57,14 +58,23 @@
   let tempo = 120, notes = [], width = 2000;
   let PLO = 48, PHI = 84, ROW = 14, ROWS = 37, GRIDH = 518;   // rango/tamaño dinámicos
 
+  // cabezal (siempre visible, marca la posición de reproducción) + regla clickeable (seek)
   const playhead = document.createElement('div');
-  playhead.style.cssText = 'position:absolute;top:0;width:2px;background:#f59e0b;' +
-    'pointer-events:none;display:none;z-index:5';
+  playhead.style.cssText = 'position:absolute;top:0;width:2px;background:#f59e0b;pointer-events:none;z-index:6';
+  const ruler = document.createElement('div');
+  ruler.style.cssText = 'position:absolute;top:0;left:0;height:' + RULER_H +
+    'px;background:#1a1d21;border-bottom:1px solid #2a2e33;cursor:pointer;z-index:4';
+  ruler.title = 'Click para elegir desde dónde reproducir';
+  ruler.addEventListener('mousedown', e => {
+    e.stopPropagation();
+    const r = grid.getBoundingClientRect();
+    seek(Math.max(0, (e.clientX - r.left) / PPS));
+  });
 
   function step() { const d = parseInt(document.getElementById('grid-div').value, 10); return d ? (60 / tempo) / d : 0; }
   function snap(t) { const s = step(); return s ? Math.round(t / s) * s : t; }
-  const yOf = p => (PHI - p) * ROW;
-  const pOf = y => PHI - Math.floor(y / ROW);
+  const yOf = p => RULER_H + (PHI - p) * ROW;                 // las notas arrancan bajo la regla
+  const pOf = y => PHI - Math.floor((y - RULER_H) / ROW);
 
   function computeLayout() {
     // rango de alturas realmente usado (+ margen). Sin notas => 3 octavas por defecto.
@@ -75,13 +85,15 @@
     } else { PLO = 48; PHI = 84; }
     ROWS = PHI - PLO + 1;
     const avail = notesEl.clientHeight || 500;   // llenar toda la altura visible con el rango
-    ROW = Math.max(7, Math.floor(avail / ROWS));  // sin tope: el grid ocupa todo el eje Y
-    GRIDH = ROWS * ROW;
+    ROW = Math.max(7, Math.floor((avail - RULER_H) / ROWS));  // sin tope: llena el eje Y
+    GRIDH = RULER_H + ROWS * ROW;
   }
 
   function buildKeyboard() {
     keysEl.innerHTML = '';
     const inner = document.createElement('div'); inner.style.height = GRIDH + 'px';
+    const spacer = document.createElement('div'); spacer.style.height = RULER_H + 'px';
+    inner.appendChild(spacer);   // alinea las teclas con las filas (que arrancan bajo la regla)
     for (let p = PHI; p >= PLO; p--) {
       const k = document.createElement('div'), black = BLACK[p % 12];
       k.style.cssText = `height:${ROW}px;box-sizing:border-box;border-bottom:1px solid #22262b;` +
@@ -114,7 +126,9 @@
       'repeating-linear-gradient(0deg,#181b1f 0,#181b1f 1px,transparent 1px,transparent ' + (ROW * 12) + 'px)';
     grid.innerHTML = '';
     notes.forEach(n => grid.appendChild(noteEl(n)));
+    ruler.style.width = width + 'px'; grid.appendChild(ruler);
     playhead.style.height = GRIDH + 'px'; grid.appendChild(playhead);
+    movePlayhead(playPos);
   }
   function layout() { computeLayout(); buildKeyboard(); render(); }
 
@@ -151,31 +165,53 @@
   window.addEventListener('mouseup', () => { if (drag) { drag = null; document.body.style.userSelect = ''; dirty(); } });
   notesEl.addEventListener('scroll', () => { keysEl.scrollTop = notesEl.scrollTop; });
 
-  // --- reproducción con el soundfont de piano (magenta SoundFontPlayer) ---
+  // --- reproducción con posición (pausa/reanuda, seek con la regla, reiniciar) ---
   let sfp = null, playing = false, raf = 0;
-  function stopPlay() {
-    playing = false;
+  let playPos = 0, segStart = 0, wall0 = 0;   // playPos persiste entre pausas
+
+  function songEnd() { return notes.reduce((m, n) => Math.max(m, n.end), 0); }
+  function movePlayhead(t) { playhead.style.left = (t * PPS) + 'px'; }
+  function currentPos() { return playing ? segStart + (performance.now() / 1000 - wall0) : playPos; }
+
+  function subSeqFrom(fromT) {   // notas desde fromT, desplazadas para arrancar en 0
+    const ns = []; let maxEnd = 0;
+    notes.forEach(n => {
+      if (n.end <= fromT + 0.001) return;
+      const en = n.end - fromT;
+      ns.push({ pitch: n.pitch, startTime: Math.max(0, n.start - fromT), endTime: en, velocity: n.velocity });
+      maxEnd = Math.max(maxEnd, en);
+    });
+    return { notes: ns, totalTime: maxEnd + 0.5 };
+  }
+
+  function stopAudio() {
     if (sfp) { try { sfp.stop(); } catch (e) {} }
-    cancelAnimationFrame(raf); playhead.style.display = 'none'; playBtn.textContent = '▶ Reproducir';
+    cancelAnimationFrame(raf); playing = false; playBtn.textContent = '▶ Reproducir';
+  }
+  function pausePlay() {
+    if (!playing) return;
+    playPos = Math.min(currentPos(), songEnd());
+    stopAudio(); movePlayhead(playPos);
   }
   function startPlay() {
-    if (playing) { stopPlay(); return; }
+    if (playing) { pausePlay(); return; }
     if (!notes.length) return;
-    const maxEnd = notes.reduce((m, n) => Math.max(m, n.end), 0);
-    const seq = { notes: notes.map(n => ({ pitch: n.pitch, startTime: n.start, endTime: n.end, velocity: n.velocity })),
-                  totalTime: maxEnd + 0.5 };
+    if (playPos >= songEnd()) playPos = 0;             // si estaba al final, arranca de cero
+    const seq = subSeqFrom(playPos);
+    if (!seq.notes.length) return;
     if (!sfp) sfp = new core.SoundFontPlayer(SOUNDFONT);
     playBtn.disabled = true; statusEl.textContent = 'cargando sonidos…';
     sfp.loadSamples(seq).then(() => {
-      statusEl.textContent = ''; playBtn.disabled = false; playing = true;
-      playBtn.textContent = '⏸ Detener'; playhead.style.display = 'block';
-      const t0 = performance.now() / 1000;
-      sfp.start(seq).then(() => { if (playing) stopPlay(); });
+      statusEl.textContent = ''; playBtn.disabled = false;
+      playing = true; playBtn.textContent = '⏸ Pausar';
+      segStart = playPos; wall0 = performance.now() / 1000;
+      try { sfp.start(seq); } catch (e) {}
+      const end = songEnd();
       (function tick() {
         if (!playing) return;
-        const t = performance.now() / 1000 - t0;
-        if (t > maxEnd + 0.5) { stopPlay(); return; }
-        playhead.style.left = (t * PPS) + 'px';
+        const t = segStart + (performance.now() / 1000 - wall0);
+        if (t >= end + 0.2) { stopAudio(); playPos = 0; movePlayhead(0); return; }
+        movePlayhead(t);
         const x = t * PPS;
         if (x < notesEl.scrollLeft || x > notesEl.scrollLeft + notesEl.clientWidth - 120)
           notesEl.scrollLeft = Math.max(0, x - 120);
@@ -183,7 +219,21 @@
       })();
     }).catch(() => { statusEl.textContent = 'error de audio'; playBtn.disabled = false; });
   }
+  function seek(t) {   // mover el cabezal a t; si estaba sonando, reanuda desde ahí
+    const was = playing;
+    if (playing) stopAudio();
+    playPos = Math.max(0, Math.min(t, songEnd()));
+    movePlayhead(playPos);
+    if (was) startPlay();
+  }
+
   playBtn.addEventListener('click', startPlay);
+  document.getElementById('rewind').addEventListener('click', () => seek(0));
+  document.addEventListener('keydown', e => {   // espacio = play / pausa
+    if (e.code === 'Space' && !/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) {
+      e.preventDefault(); startPlay();
+    }
+  });
 
   // --- pantalla completa (recalcula el layout para llenar la altura nueva) ---
   const wrap = document.getElementById('editor-wrap'), fsBtn = document.getElementById('fs');
