@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Procesando — Clavis{% endblock %}
+{% block content %}
+<span class="label">Transcripción</span>
+<h1 class="hero__title" style="font-size:32px">Procesando audio…</h1>
+<div class="card">
+  <p id="state" class="muted">En cola…</p>
+  <form method="post" action="{{ url_for('main.job_cancel', job_id=job.id) }}" style="margin-top:8px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="btn btn--ghost">Cancelar</button>
+  </form>
+  <p class="links" style="margin-top:16px"><a href="{{ url_for('auth.dashboard') }}">← Dashboard</a></p>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  (function () {
+    var url = {{ url_for('main.job_status', job_id=job.id) | tojson }};
+    var labels = {queued:'En cola…', started:'Transcribiendo…', failed:'Falló la transcripción.',
+                  canceled:'Cancelado.'};
+    var el = document.getElementById('state');
+    function poll() {
+      fetch(url, {headers: {'Accept': 'application/json'}}).then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.status === 'finished' && d.score_id) {
+            window.location = '/score/' + d.score_id;
+            return;
+          }
+          el.textContent = labels[d.status] || d.status;
+          if (d.status === 'queued' || d.status === 'started') setTimeout(poll, 2000);
+        }).catch(function () { setTimeout(poll, 3000); });
+    }
+    poll();
+  })();
+</script>
+{% endblock %}

@@ -11,6 +11,9 @@ class Config:
     # Rate limiter persistido en Redis (threat model §6.19).
     RATELIMIT_STORAGE_URI = REDIS_URL
 
+    # Jobs de transcripción encolados en RQ (False => inline, solo para tests).
+    RQ_ASYNC = True
+
     # DEBUG nunca on por accidente: solo si FLASK_DEBUG=1 explícito.
     DEBUG = os.environ.get("FLASK_DEBUG") == "1"
 

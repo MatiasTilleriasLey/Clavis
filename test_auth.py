@@ -24,6 +24,7 @@ class TestConfig(Config):
     SESSION_COOKIE_SECURE = False          # el test client habla http, no TLS
     STORAGE_ROOT = tempfile.mkdtemp()
     MSCORE_BIN = None                      # sin PDF en el test
+    RQ_ASYNC = False                       # jobs inline, sin Redis/worker
 
 
 def _token_from_outbox(outbox, path="verify"):
@@ -81,22 +82,22 @@ def run():
     r = app.test_client().get("/dashboard")
     assert r.status_code == 302 and "/login" in r.headers["Location"]
 
-    # --- Upload (paso 5-7), con `client` logueado y verificado ---
-    # Stub del pipeline: este test cubre auth + magic bytes + render, no la inferencia ML.
-    import app.main.routes as _mr
+    # --- Upload + cola (paso 5-10), con `client` logueado y verificado ---
+    # Stub del pipeline: el job corre inline (RQ_ASYNC=False); patcheamos app.jobs.transcribe.
+    import app.jobs as _jobs
     def _fake_transcribe(src, work_dir):
         p = os.path.join(work_dir, "score.musicxml")
         open(p, "w").write("<score-partwise><part/></score-partwise>")
         return p
-    _mr.transcribe = _fake_transcribe
+    _jobs.transcribe = _fake_transcribe
 
     def up(cl, data, name):
         return cl.post("/upload", data={"audio": (BytesIO(data), name)},
                        content_type="multipart/form-data", follow_redirects=True)
 
-    # 8a. Magic bytes de WAV válidos => transcribe, persiste y muestra la partitura (OSMD).
+    # 8a. Magic bytes de WAV válidos => encola, el job (inline) transcribe y persiste.
     r = up(client, b"RIFF\x24\x08\x00\x00WAVEfmt ", "song.wav")
-    assert b"osmd" in r.data, "no mostró la partitura de un WAV válido"
+    assert b"no parece un audio" not in r.data, "rechazó un WAV válido"
 
     # 8b. Magic bytes mandan sobre la extensión: .wav con contenido no-audio => rechazado.
     r = up(client, b"<?xml version='1.0'?><x/>", "fake.wav")
@@ -111,7 +112,8 @@ def run():
     from app.models import Score
     with app.app_context():
         a = db.session.scalar(db.select(User).filter_by(email="a@x.com"))
-        score = db.session.scalar(db.select(Score).filter_by(user_id=a.id))
+        a_id = a.id
+        score = db.session.scalar(db.select(Score).filter_by(user_id=a_id))
         assert score is not None, "el upload no persistió la partitura"
         sid = score.id
         # crear usuario B verificado directamente
@@ -133,6 +135,19 @@ def run():
     assert b"song" not in cb.get("/dashboard").data, "el listado de B incluyó la de A"
     # 9e. A sí accede a la suya.
     assert client.get(f"/score/{sid}").status_code == 200, "A no accede a su propia partitura"
+
+    # --- Ownership en cancelación de jobs (paso 10, §6.28) ---
+    from app.models import Job
+    with app.app_context():
+        j = Job(user_id=a_id, status="queued")
+        db.session.add(j); db.session.commit()
+        jid = j.id
+    # 10a. B no puede cancelar el job de A (404), y sigue en cola.
+    assert cb.post(f"/job/{jid}/cancel").status_code == 404, "IDOR: B canceló el job de A"
+    with app.app_context():
+        assert db.session.get(Job, jid).status == "queued", "el job de A fue cancelado por B"
+    # 10b. B tampoco ve su estado.
+    assert cb.get(f"/job/{jid}/status").status_code == 404, "IDOR: B vio el estado del job de A"
 
     # --- Reseteo de contraseña (paso 3) ---
     anon = app.test_client()  # sin sesión: forgot-password redirige si estás logueado
@@ -165,7 +180,7 @@ def run():
                follow_redirects=True)
     assert b"Dashboard" in r.data, "la contraseña nueva no sirvió"
 
-    print("OK: auth + reset + upload + IDOR verificado (20 aserciones de seguridad)")
+    print("OK: auth + reset + upload + IDOR + jobs verificado (23 aserciones de seguridad)")
 
 
 if __name__ == "__main__":

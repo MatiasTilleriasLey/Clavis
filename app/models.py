@@ -52,6 +52,21 @@ class Score(db.Model):
     user = db.relationship("User")
 
 
+class Job(db.Model):
+    """Job de transcripción en background. Estado espejado en DB para el frontend y para
+    verificar ownership en la cancelación (§4.8, §6.28) sin depender de introspección de RQ."""
+
+    __tablename__ = "jobs"
+
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
+    rq_id = db.Column(db.String(64), nullable=True)  # id del job en RQ, para cancelar
+    status = db.Column(db.String(16), nullable=False, default="queued")  # queued/started/finished/failed/canceled
+    error = db.Column(db.String(64), nullable=True)  # código técnico sin contenido (§logging)
+    score_id = db.Column(db.Integer, db.ForeignKey("scores.id"), nullable=True)
+    created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now)
+
+
 class EmailToken(db.Model):
     """Token de un solo uso para verificación de email y reseteo de contraseña.
     En DB se guarda solo el hash del token; el valor plano viaja únicamente en el mail."""

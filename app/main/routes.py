@@ -1,10 +1,9 @@
 import os
-import shutil
 import tempfile
 import uuid
 
-from flask import (Blueprint, abort, current_app, flash, redirect,
-                   render_template, send_file, url_for)
+from flask import (Blueprint, abort, flash, redirect, render_template,
+                   send_file, url_for)
 from flask_login import current_user
 from werkzeug.utils import secure_filename
 
@@ -12,8 +11,9 @@ from .. import storage
 from ..audio import detect_audio_kind
 from ..auth.routes import verified_required
 from ..extensions import db
-from ..models import Score
-from ..pipeline import musicxml_to_pdf, transcribe
+from ..jobs import cancel as cancel_job
+from ..jobs import enqueue_transcription
+from ..models import Job, Score
 from .forms import UploadForm
 
 bp = Blueprint("main", __name__)
@@ -23,6 +23,11 @@ def _owned_score(score_id):
     """Trae la partitura SOLO si es del usuario de la sesión (defensa IDOR, §4.8).
     Filtra por id Y user_id en la misma query — nunca busca por id y chequea después."""
     return Score.query.filter_by(id=score_id, user_id=current_user.id).first_or_404()
+
+
+def _owned_job(job_id):
+    """Mismo criterio para jobs: ownership en cancelación/estado (§6.28)."""
+    return Job.query.filter_by(id=job_id, user_id=current_user.id).first_or_404()
 
 
 @bp.post("/upload")
@@ -44,37 +49,39 @@ def upload():
         return redirect(url_for("auth.dashboard"))
 
     title = (os.path.splitext(f.filename or "audio")[0] or "audio")[:200]  # solo display
-    tmpdir = tempfile.mkdtemp(prefix="clavis_")
-    try:
-        src = os.path.join(tmpdir, f"{uuid.uuid4().hex}.{kind}")
-        f.save(src)
-        # ponytail: sync por ahora (paso 9). Pasa a la cola en el paso 10.
-        xml_path = transcribe(src, tmpdir)
+    # work_dir persiste hasta que el worker termine y lo limpie (audio nunca se persiste).
+    work_dir = tempfile.mkdtemp(prefix="clavis_")
+    src = os.path.join(work_dir, f"{uuid.uuid4().hex}.{kind}")
+    f.save(src)
+    job = enqueue_transcription(current_user.id, src, work_dir, title)
+    return redirect(url_for("main.job_view", job_id=job.id))
 
-        pdf_path = None
-        mscore = current_app.config.get("MSCORE_BIN")
-        if mscore:
-            try:
-                pdf_path = os.path.join(tmpdir, "score.pdf")
-                musicxml_to_pdf(xml_path, pdf_path, mscore)
-            except Exception:
-                current_app.logger.warning("export PDF falló", exc_info=True)
-                pdf_path = None
 
-        stored = uuid.uuid4().hex
-        storage.save(current_user.id, stored, xml_path, pdf_path)
-        score = Score(user_id=current_user.id, title=title, instrument="mezcla",
-                      stored_uuid=stored, has_pdf=pdf_path is not None)
-        db.session.add(score)
+@bp.get("/job/<int:job_id>")
+@verified_required
+def job_view(job_id):
+    job = _owned_job(job_id)
+    return render_template("job.html", job=job)
+
+
+@bp.get("/job/<int:job_id>/status")
+@verified_required
+def job_status(job_id):
+    job = _owned_job(job_id)
+    return {"status": job.status, "score_id": job.score_id}
+
+
+@bp.post("/job/<int:job_id>/cancel")
+@verified_required
+def job_cancel(job_id):
+    job = _owned_job(job_id)
+    if job.status in ("queued", "started"):
+        from ..jobs import _redis
+        cancel_job(job, _redis())
+        job.status = "canceled"
         db.session.commit()
-    except Exception:
-        current_app.logger.warning("fallo de transcripción", exc_info=True)
-        flash("No se pudo transcribir el audio. Probá con otro archivo.")
-        return redirect(url_for("auth.dashboard"))
-    finally:
-        shutil.rmtree(tmpdir, ignore_errors=True)  # audio original nunca se persiste
-
-    return redirect(url_for("main.score_view", score_id=score.id))
+    flash("Job cancelado.")
+    return redirect(url_for("auth.dashboard"))
 
 
 @bp.get("/score/<int:score_id>")
