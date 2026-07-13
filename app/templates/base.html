@@ -4,6 +4,13 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Clavis{% endblock %}</title>
+  {# Fuentes del DESIGN.md desde Google Fonts CDN.
+     Nota seguridad (§4.9): el CSS de fonts.googleapis.com es dinámico y no admite un hash
+     SRI estable; queda como dependencia de red externa sin SRI, por decisión explícita. #}
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@600&display=swap">
   <link rel="stylesheet" href="{{ url_for('static', filename='css/clavis.css') }}">
 </head>
 <body>
@@ -31,5 +38,6 @@
     {% endwith %}
     {% block content %}{% endblock %}
   </main>
+  {% block scripts %}{% endblock %}
 </body>
 </html>
