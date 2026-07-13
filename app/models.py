@@ -23,6 +23,7 @@ class User(UserMixin, db.Model):
     email = db.Column(db.String(254), unique=True, nullable=False, index=True)
     password_hash = db.Column(db.String(255), nullable=False)
     email_verified = db.Column(db.Boolean, nullable=False, default=False)
+    is_admin = db.Column(db.Boolean, nullable=False, default=False)  # rol explícito (§4.8)
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now)
 
     def set_password(self, password):

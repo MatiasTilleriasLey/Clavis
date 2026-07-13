@@ -1,6 +1,6 @@
 from functools import wraps
 
-from flask import (Blueprint, flash, redirect, render_template, request,
+from flask import (Blueprint, abort, flash, redirect, render_template, request,
                    session, url_for)
 from flask_login import (current_user, login_required, login_user,
                          logout_user)
@@ -31,6 +31,17 @@ def verified_required(view):
     def wrapped(*args, **kwargs):
         if not current_user.email_verified:
             return redirect(url_for("auth.unverified"))
+        return view(*args, **kwargs)
+    return wrapped
+
+
+def admin_required(view):
+    """Rol admin explícito (§4.8), sobre verificación. Nunca permisos hardcodeados por cuenta."""
+    @wraps(view)
+    @verified_required
+    def wrapped(*args, **kwargs):
+        if not current_user.is_admin:
+            abort(403)
         return view(*args, **kwargs)
     return wrapped
 

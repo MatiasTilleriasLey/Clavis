@@ -9,11 +9,11 @@ from werkzeug.utils import secure_filename
 
 from .. import storage
 from ..audio import detect_audio_kind
-from ..auth.routes import verified_required
+from ..auth.routes import admin_required, verified_required
 from ..extensions import db
 from ..jobs import cancel as cancel_job
 from ..jobs import enqueue_ingest, enqueue_transcription
-from ..models import Job, Score
+from ..models import Job, Score, User
 from .forms import UploadForm
 
 bp = Blueprint("main", __name__)
@@ -154,6 +154,15 @@ def score_pdf(score_id):
         abort(404)
     name = (secure_filename(score.title) or "partitura") + ".pdf"
     return send_file(path, mimetype="application/pdf", as_attachment=True, download_name=name)
+
+
+@bp.get("/admin")
+@admin_required
+def admin():
+    from sqlalchemy import func
+    users = User.query.order_by(User.created_at.desc()).all()
+    job_counts = dict(db.session.query(Job.status, func.count()).group_by(Job.status).all())
+    return render_template("admin.html", users=users, job_counts=job_counts)
 
 
 @bp.post("/score/<int:score_id>/delete")

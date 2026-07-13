@@ -1,3 +1,4 @@
+import click
 import redis
 from flask import (Flask, abort, flash, redirect, render_template, request,
                    url_for)
@@ -36,6 +37,14 @@ def create_app(config_object=Config):
             if origin and origin != allowed and not origin.startswith(allowed + "/"):
                 abort(403)
 
+    @app.after_request
+    def security_headers(resp):
+        resp.headers["X-Content-Type-Options"] = "nosniff"
+        resp.headers["X-Frame-Options"] = "DENY"  # anti-clickjacking
+        # same-origin (no no-referrer): mantiene el Referer que el CSRF de Flask-WTF valida.
+        resp.headers["Referrer-Policy"] = "same-origin"
+        return resp
+
     from .auth import bp as auth_bp
     from .main import bp as main_bp
 
@@ -46,6 +55,18 @@ def create_app(config_object=Config):
     def too_large(e):
         flash("El archivo supera el límite de 100 MB.")
         return redirect(url_for("auth.dashboard"))
+
+    @app.cli.command("make-admin")
+    @click.argument("email")
+    def make_admin(email):
+        """Marca a un usuario como admin: flask make-admin <email>"""
+        user = User.query.filter_by(email=email.strip().lower()).first()
+        if user is None:
+            click.echo("No existe ese usuario.")
+            return
+        user.is_admin = True
+        db.session.commit()
+        click.echo(f"{email} ahora es admin.")
 
     @app.get("/")
     def index():

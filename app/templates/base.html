@@ -18,6 +18,7 @@
     <div class="nav__brand"><a href="{{ url_for('index') }}">Clavis</a></div>
     <div class="nav__actions">
       {% if current_user.is_authenticated %}
+        {% if current_user.is_admin %}<a class="btn btn--ghost" href="{{ url_for('main.admin') }}">Admin</a>{% endif %}
         <span class="nav__email">{{ current_user.email }}</span>
         <form method="post" action="{{ url_for('auth.logout') }}">
           <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">

@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Admin — Clavis{% endblock %}
+{% block content %}
+<span class="label">Administración</span>
+<h1 class="hero__title" style="font-size:32px">Panel</h1>
+
+<div class="card" style="margin-bottom:16px">
+  <span class="label">Cola de jobs</span>
+  <p class="muted" style="margin-top:8px">
+    {% for status in ['queued','started','finished','failed','canceled'] %}
+      {{ status }}: <strong>{{ job_counts.get(status, 0) }}</strong>{% if not loop.last %} · {% endif %}
+    {% endfor %}
+  </p>
+</div>
+
+<div class="card">
+  <span class="label">Usuarios ({{ users|length }})</span>
+  <div style="overflow-x:auto; margin-top:12px">
+    <table style="width:100%; border-collapse:collapse">
+      <thead><tr style="text-align:left; color:var(--text-2)">
+        <th style="padding:6px 12px 6px 0">Email</th><th>Verificado</th><th>Admin</th><th>Alta</th>
+      </tr></thead>
+      <tbody>
+        {% for u in users %}
+        <tr style="border-top:1px solid var(--border)">
+          <td style="padding:6px 12px 6px 0">{{ u.email }}</td>
+          <td>{{ 'sí' if u.email_verified else 'no' }}</td>
+          <td>{{ 'sí' if u.is_admin else '—' }}</td>
+          <td class="muted">{{ u.created_at.strftime('%Y-%m-%d') }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

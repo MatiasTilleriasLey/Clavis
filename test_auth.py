@@ -177,6 +177,15 @@ def run():
     # 10b. B tampoco ve su estado.
     assert cb.get(f"/job/{jid}/status").status_code == 404, "IDOR: B vio el estado del job de A"
 
+    # --- Rol admin explícito (paso 13, §4.8) ---
+    # 11a. Usuario normal (B) => 403 en /admin.
+    assert cb.get("/admin").status_code == 403, "un usuario normal accedió a /admin"
+    # 11b. Al marcar admin, sí accede.
+    with app.app_context():
+        bu = db.session.scalar(db.select(User).filter_by(email="b@x.com"))
+        bu.is_admin = True; db.session.commit()
+    assert cb.get("/admin").status_code == 200, "un admin no accede a /admin"
+
     # --- Reseteo de contraseña (paso 3) ---
     anon = app.test_client()  # sin sesión: forgot-password redirige si estás logueado
     # 9. forgot-password de email existente => manda 1 mail con token de reset.
@@ -208,7 +217,7 @@ def run():
                follow_redirects=True)
     assert b"Dashboard" in r.data, "la contraseña nueva no sirvió"
 
-    print("OK: auth + reset + upload + stems + allowlist + IDOR + jobs (27 aserciones)")
+    print("OK: auth + reset + upload + stems + allowlist + IDOR + jobs + admin (29 aserciones)")
 
 
 if __name__ == "__main__":
