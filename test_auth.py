@@ -78,14 +78,22 @@ def run():
     r = app.test_client().get("/dashboard")
     assert r.status_code == 302 and "/login" in r.headers["Location"]
 
-    # --- Upload (paso 5), con `client` logueado y verificado ---
+    # --- Upload (paso 5-7), con `client` logueado y verificado ---
+    # Stub del pipeline: este test cubre auth + magic bytes + render, no la inferencia ML.
+    import app.main.routes as _mr
+    def _fake_transcribe(src, work_dir):
+        p = os.path.join(work_dir, "score.musicxml")
+        open(p, "w").write("<score-partwise><part/></score-partwise>")
+        return p
+    _mr.transcribe = _fake_transcribe
+
     def up(cl, data, name):
         return cl.post("/upload", data={"audio": (BytesIO(data), name)},
                        content_type="multipart/form-data", follow_redirects=True)
 
-    # 8a. WAV válido => validado.
+    # 8a. Magic bytes de WAV válidos => transcribe y renderiza la partitura (OSMD).
     r = up(client, b"RIFF\x24\x08\x00\x00WAVEfmt ", "song.wav")
-    assert b"validado" in r.data, "WAV válido rechazado"
+    assert b"osmd" in r.data, "no renderizó el resultado de un WAV válido"
 
     # 8b. Magic bytes mandan sobre la extensión: .wav con contenido no-audio => rechazado.
     r = up(client, b"<?xml version='1.0'?><x/>", "fake.wav")

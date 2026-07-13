@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}Partitura — Clavis{% endblock %}
+{% block content %}
+<span class="label">Resultado · {{ kind }}</span>
+<h1 class="hero__title" style="font-size:32px">Partitura</h1>
+<div class="card" style="background:#fff; overflow-x:auto">
+  <div id="osmd"></div>
+</div>
+<p class="links"><a href="{{ url_for('auth.dashboard') }}">← Volver al dashboard</a></p>
+{% endblock %}
+
+{% block scripts %}
+{# base64 (alfabeto sin '<') => no puede romper el <script> ni inyectar (§4.9 / XSS) #}
+<script id="mxml" type="application/octet-stream">{{ xml_b64 }}</script>
+<script src="{{ url_for('static', filename='js/opensheetmusicdisplay.min.js') }}"></script>
+<script>
+  (function () {
+    var b64 = document.getElementById('mxml').textContent.trim();
+    var xml = decodeURIComponent(escape(atob(b64)));  // base64 -> UTF-8
+    var osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay('osmd', {
+      autoResize: true, backend: 'svg', drawTitle: false
+    });
+    osmd.load(xml).then(function () { osmd.render(); });
+  })();
+</script>
+{% endblock %}
