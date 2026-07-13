@@ -17,14 +17,16 @@ def path_for(user_id, stored_uuid, ext):
     return os.path.join(_scores_dir(user_id), f"{stored_uuid}.{ext}")
 
 
-def save(user_id, stored_uuid, xml_src, pdf_src=None):
+def save(user_id, stored_uuid, xml_src, pdf_src=None, midi_src=None):
     shutil.copy(xml_src, path_for(user_id, stored_uuid, "musicxml"))
     if pdf_src and os.path.exists(pdf_src):
         shutil.copy(pdf_src, path_for(user_id, stored_uuid, "pdf"))
+    if midi_src and os.path.exists(midi_src):
+        shutil.copy(midi_src, path_for(user_id, stored_uuid, "mid"))
 
 
 def delete(user_id, stored_uuid):
-    for ext in ("musicxml", "pdf"):
+    for ext in ("musicxml", "pdf", "mid"):
         try:
             os.remove(path_for(user_id, stored_uuid, ext))
         except FileNotFoundError:

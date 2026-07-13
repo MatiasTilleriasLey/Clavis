@@ -73,9 +73,12 @@ class Score(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     user_id = db.Column(db.Integer, db.ForeignKey("users.id"), nullable=False, index=True)
     title = db.Column(db.String(200), nullable=False)          # solo display (Jinja escapa)
+    composer = db.Column(db.String(200), nullable=True)        # autor (opcional, editable)
+    arranger = db.Column(db.String(200), nullable=True)        # arreglo (opcional, editable)
     instrument = db.Column(db.String(40), nullable=False, default="mezcla")
     stored_uuid = db.Column(db.String(32), unique=True, nullable=False)  # nombre en disco (§6.6)
     has_pdf = db.Column(db.Boolean, nullable=False, default=False)
+    has_midi = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now)
 
     user = db.relationship("User")

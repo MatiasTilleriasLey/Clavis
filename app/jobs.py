@@ -115,7 +115,9 @@ def transcribe_job(job_id, audio_path, work_dir, user_id, title, stems=None):
 def _transcribe_one(wav, out_dir, instrument, title, user_id, app):
     """Transcribe un WAV (mezcla o stem) -> crea y devuelve un Score (sin commit)."""
     from .models import Score
-    xml = transcribe(wav, out_dir)
+    display = title if instrument == "mezcla" else f"{title} — {instrument}"
+    xml = transcribe(wav, out_dir, instrument=instrument, title=display)
+    midi = os.path.join(out_dir, "notes.mid")
     pdf = None
     mscore = app.config.get("MSCORE_BIN")
     if mscore:
@@ -126,10 +128,10 @@ def _transcribe_one(wav, out_dir, instrument, title, user_id, app):
             app.logger.warning("export PDF falló", exc_info=True)
             pdf = None
     stored = uuid.uuid4().hex
-    storage.save(user_id, stored, xml, pdf)
-    display = title if instrument == "mezcla" else f"{title} — {instrument}"
-    score = Score(user_id=user_id, title=display, instrument=instrument,
-                  stored_uuid=stored, has_pdf=pdf is not None)
+    has_midi = os.path.exists(midi)
+    storage.save(user_id, stored, xml, pdf, midi if has_midi else None)
+    score = Score(user_id=user_id, title=display, instrument=instrument, stored_uuid=stored,
+                  has_pdf=pdf is not None, has_midi=has_midi)
     db.session.add(score)
     return score
 

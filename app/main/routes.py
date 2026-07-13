@@ -156,6 +156,40 @@ def score_pdf(score_id):
     return send_file(path, mimetype="application/pdf", as_attachment=True, download_name=name)
 
 
+@bp.get("/score/<int:score_id>/midi")
+@login_required
+def score_midi(score_id):
+    score = _owned_score(score_id)
+    path = storage.path_for(current_user.id, score.stored_uuid, "mid")
+    if not score.has_midi or not os.path.exists(path):
+        abort(404)
+    name = (secure_filename(score.title) or "partitura") + ".mid"
+    return send_file(path, mimetype="audio/midi", as_attachment=True, download_name=name)
+
+
+@bp.post("/score/<int:score_id>/edit")
+@login_required
+def score_edit(score_id):
+    score = _owned_score(score_id)
+    score.title = ((request.form.get("title") or "").strip() or score.title)[:200]
+    score.composer = (request.form.get("composer") or "").strip()[:200] or None
+    score.arranger = (request.form.get("arranger") or "").strip()[:200] or None
+    # Reescribe la metadata en el MusicXML y regenera el PDF (sync; edición poco frecuente).
+    from ..pipeline import apply_metadata, musicxml_to_pdf
+    xml_path = storage.path_for(current_user.id, score.stored_uuid, "musicxml")
+    try:
+        if os.path.exists(xml_path):
+            apply_metadata(xml_path, score.title, score.composer or "", score.arranger or "")
+            mscore = current_app.config.get("MSCORE_BIN")
+            if mscore and score.has_pdf:
+                musicxml_to_pdf(xml_path, storage.path_for(current_user.id, score.stored_uuid, "pdf"), mscore)
+    except Exception:
+        current_app.logger.warning("edición de metadata falló", exc_info=True)
+    db.session.commit()
+    flash("Partitura actualizada.")
+    return redirect(url_for("main.score_view", score_id=score.id))
+
+
 @bp.get("/admin")
 @admin_required
 def admin():

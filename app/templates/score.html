@@ -3,24 +3,46 @@
 {% block content %}
 <span class="label">Partitura · {{ score.instrument }}</span>
 <h1 class="hero__title" style="font-size:32px">{{ score.title }}</h1>
+{% if score.composer or score.arranger %}
+<p class="muted">
+  {% if score.composer %}Autor: {{ score.composer }}{% endif %}
+  {% if score.arranger %}{% if score.composer %} · {% endif %}Arreglo: {{ score.arranger }}{% endif %}
+</p>
+{% endif %}
+
 <p class="links">
   <a href="{{ url_for('auth.dashboard') }}">← Dashboard</a>
-  {% if score.has_pdf %} · <a href="{{ url_for('main.score_pdf', score_id=score.id) }}">Descargar PDF</a>{% endif %}
+  {% if score.has_pdf %} · <a href="{{ url_for('main.score_pdf', score_id=score.id) }}">PDF</a>{% endif %}
+  · <a href="{{ url_for('main.score_musicxml', score_id=score.id) }}">MusicXML</a>
+  {% if score.has_midi %} · <a href="{{ url_for('main.score_midi', score_id=score.id) }}">MIDI</a>{% endif %}
 </p>
-<div class="card" style="background:#fff; overflow-x:auto">
+
+<div class="card" style="background:#fff; overflow-x:auto; margin-bottom:16px">
   <div id="osmd"></div>
 </div>
+
+<details class="card">
+  <summary style="cursor:pointer"><strong>Editar datos de la partitura</strong></summary>
+  <form method="post" action="{{ url_for('main.score_edit', score_id=score.id) }}" style="margin-top:12px">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field"><label>Nombre de la canción<br>
+      <input type="text" name="title" value="{{ score.title }}" maxlength="200" required></label></div>
+    <div class="field"><label>Autor (opcional)<br>
+      <input type="text" name="composer" value="{{ score.composer or '' }}" maxlength="200"></label></div>
+    <div class="field"><label>Arreglo (opcional)<br>
+      <input type="text" name="arranger" value="{{ score.arranger or '' }}" maxlength="200"></label></div>
+    <button type="submit">Guardar</button>
+    <p class="muted" style="font-size:13px">Actualiza el PDF y el MusicXML descargables (puede tardar unos segundos).</p>
+  </form>
+</details>
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/opensheetmusicdisplay.min.js') }}"></script>
 <script>
   (function () {
-    // OSMD hace fetch del MusicXML desde el endpoint con ownership (misma sesión).
     var url = {{ url_for('main.score_musicxml', score_id=score.id) | tojson }};
-    var osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay('osmd', {
-      autoResize: true, backend: 'svg', drawTitle: false
-    });
+    var osmd = new opensheetmusicdisplay.OpenSheetMusicDisplay('osmd', {autoResize: true, backend: 'svg'});
     osmd.load(url).then(function () { osmd.render(); });
   })();
 </script>
