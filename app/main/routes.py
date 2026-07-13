@@ -172,14 +172,13 @@ def score_edit(score_id):
     score.composer = (request.form.get("composer") or "").strip()[:200] or None
     score.arranger = (request.form.get("arranger") or "").strip()[:200] or None
     # Reescribe la metadata en el MusicXML y regenera el PDF (sync; edición poco frecuente).
-    from ..pipeline import apply_metadata, musicxml_to_pdf
+    from ..pipeline import apply_metadata
     xml_path = storage.path_for(current_user.id, score.stored_uuid, "musicxml")
+    pdf_path = storage.path_for(current_user.id, score.stored_uuid, "pdf") if score.has_pdf else None
     try:
         if os.path.exists(xml_path):
-            apply_metadata(xml_path, score.title, score.composer or "", score.arranger or "")
-            mscore = current_app.config.get("MSCORE_BIN")
-            if mscore and score.has_pdf:
-                musicxml_to_pdf(xml_path, storage.path_for(current_user.id, score.stored_uuid, "pdf"), mscore)
+            apply_metadata(xml_path, pdf_path, score.title, score.composer or "",
+                           score.arranger or "", current_app.config.get("MSCORE_BIN"))
     except Exception:
         current_app.logger.warning("edición de metadata falló", exc_info=True)
     db.session.commit()

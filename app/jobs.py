@@ -9,7 +9,7 @@ from rq import Queue
 
 from . import storage
 from .extensions import db
-from .pipeline import musicxml_to_pdf, separate_stems, transcribe  # patcheable en tests
+from .pipeline import separate_stems, transcribe  # patcheable en tests
 
 QUEUE_NAME = "clavis"
 JOB_TIMEOUT = 1800  # 30 min duro por job (defensa DoS, refuerza el tope de duración del paso 12)
@@ -111,22 +111,15 @@ def transcribe_job(job_id, audio_path, work_dir, user_id, title, separate=False)
 def _transcribe_one(wav, out_dir, title, user_id, app):
     """Transcribe un WAV de piano -> crea y devuelve un Score (sin commit)."""
     from .models import Score
-    xml = transcribe(wav, out_dir, title=title)
-    midi = os.path.join(out_dir, "notes.mid")
-    pdf = None
     mscore = app.config.get("MSCORE_BIN")
-    if mscore:
-        try:
-            pdf = os.path.join(out_dir, "score.pdf")
-            musicxml_to_pdf(xml, pdf, mscore)
-        except Exception:
-            app.logger.warning("export PDF falló", exc_info=True)
-            pdf = None
-    stored = uuid.uuid4().hex
+    xml, pdf = transcribe(wav, out_dir, title=title, mscore_bin=mscore)
+    midi = os.path.join(out_dir, "notes.mid")
     has_midi = os.path.exists(midi)
-    storage.save(user_id, stored, xml, pdf, midi if has_midi else None)
+    has_pdf = bool(pdf) and os.path.exists(pdf)
+    stored = uuid.uuid4().hex
+    storage.save(user_id, stored, xml, pdf if has_pdf else None, midi if has_midi else None)
     score = Score(user_id=user_id, title=title, instrument="piano", stored_uuid=stored,
-                  has_pdf=pdf is not None, has_midi=has_midi)
+                  has_pdf=has_pdf, has_midi=has_midi)
     db.session.add(score)
     return score
 

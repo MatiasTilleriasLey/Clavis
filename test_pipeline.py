@@ -27,13 +27,17 @@ def run():
         ["ffmpeg", "-y", "-f", "lavfi", "-i", "sine=frequency=440:duration=2", "-ar", "22050", wav],
         check=True, capture_output=True,
     )
-    xml = transcribe(wav, work)
+    mscore = os.environ.get("MSCORE_BIN")
+    if not mscore or not os.path.exists(mscore):
+        print("SKIP: MSCORE_BIN no seteado (requerido para la notación)")
+        return
+    xml, pdf = transcribe(wav, work, title="Test", mscore_bin=mscore)
     txt = open(xml).read()
     assert "score-partwise" in txt, "no generó un MusicXML válido"
-    # Piano => gran pentagrama: dos staves (clave de sol + clave de fa).
-    assert txt.count("<score-part ") == 2, "el piano debería salir en dos pentagramas"
+    # Piano => gran pentagrama: dos staves (clave de sol + clave de fa) en un part.
     assert "<sign>F</sign>" in txt, "falta la clave de fa (mano izquierda)"
-    print("OK: pipeline audio->MusicXML (piano, gran pentagrama) verificado")
+    assert pdf and os.path.exists(pdf), "no generó el PDF"
+    print("OK: pipeline audio->MusicXML+PDF (piano, MuseScore) verificado")
 
 
 if __name__ == "__main__":
