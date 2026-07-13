@@ -10,8 +10,11 @@
   y el modo piano.
 </p>
 
+<div id="editor-wrap">
 <div style="display:flex; gap:12px; align-items:center; margin-bottom:10px; flex-wrap:wrap">
+  <button id="play" class="btn btn--ghost">▶ Reproducir</button>
   <button id="save" class="btn btn--primary">Guardar y regenerar</button>
+  <button id="fs" class="btn btn--ghost">⛶ Pantalla completa</button>
   <label class="muted" style="font-size:13px">Grilla:
     <select id="grid-div" style="width:auto; display:inline-block; padding:4px 8px">
       <option value="1">Negra</option><option value="2">Corchea</option>
@@ -30,6 +33,13 @@
     <div id="grid" style="position:relative"></div>
   </div>
 </div>
+</div>
+
+<style>
+  /* En pantalla completa: el wrapper ocupa todo y el editor toma la altura restante. */
+  #editor-wrap:fullscreen { background: var(--bg); padding: 14px; }
+  #editor-wrap:fullscreen #editor { height: calc(100vh - 70px); }
+</style>
 {% endblock %}
 
 {% block scripts %}
@@ -138,6 +148,66 @@
   // sincronizar scroll vertical del teclado con la grilla
   notesEl.addEventListener('scroll', () => { keysEl.scrollTop = notesEl.scrollTop; });
 
+  // --- reproducción (sintetiza las notas ACTUALES, con las ediciones en vivo) ---
+  const playhead = document.createElement('div');
+  playhead.style.cssText = 'position:absolute;top:0;width:2px;background:#f59e0b;height:' +
+    GRIDH + 'px;pointer-events:none;display:none;z-index:5';
+  let actx = null, playing = false, raf = 0;
+
+  function stopPlay() {
+    playing = false;
+    if (actx) { try { actx.close(); } catch (e) {} actx = null; }
+    cancelAnimationFrame(raf);
+    playhead.style.display = 'none';
+    document.getElementById('play').textContent = '▶ Reproducir';
+  }
+  function startPlay() {
+    if (playing) { stopPlay(); return; }
+    if (!notes.length) return;
+    actx = new (window.AudioContext || window.webkitAudioContext)();
+    const comp = actx.createDynamicsCompressor(); comp.connect(actx.destination);
+    const master = actx.createGain(); master.gain.value = 0.6; master.connect(comp);
+    const t0 = actx.currentTime + 0.15;
+    let maxEnd = 0;
+    notes.forEach(n => {
+      maxEnd = Math.max(maxEnd, n.end);
+      const osc = actx.createOscillator(); osc.type = 'triangle';
+      osc.frequency.value = 440 * Math.pow(2, (n.pitch - 69) / 12);
+      const g = actx.createGain();
+      const st = t0 + n.start, en = t0 + n.end, v = (n.velocity / 127) * 0.5;
+      g.gain.setValueAtTime(0, st);
+      g.gain.linearRampToValueAtTime(v, st + 0.008);   // ataque corto
+      g.gain.setValueAtTime(v, Math.max(st + 0.01, en - 0.06));
+      g.gain.linearRampToValueAtTime(0, en);           // release
+      osc.connect(g); g.connect(master);
+      osc.start(st); osc.stop(en + 0.06);
+    });
+    playing = true;
+    document.getElementById('play').textContent = '⏸ Detener';
+    playhead.style.display = 'block';
+    (function tick() {
+      if (!playing) return;
+      const t = actx.currentTime - t0;
+      if (t > maxEnd + 0.3) { stopPlay(); return; }
+      playhead.style.left = (t * PPS) + 'px';
+      const x = t * PPS;
+      if (x < notesEl.scrollLeft || x > notesEl.scrollLeft + notesEl.clientWidth - 120)
+        notesEl.scrollLeft = Math.max(0, x - 120);
+      raf = requestAnimationFrame(tick);
+    })();
+  }
+  document.getElementById('play').addEventListener('click', startPlay);
+
+  // --- pantalla completa ---
+  const wrap = document.getElementById('editor-wrap'), fsBtn = document.getElementById('fs');
+  fsBtn.addEventListener('click', () => {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else wrap.requestFullscreen().catch(() => {});
+  });
+  document.addEventListener('fullscreenchange', () => {
+    fsBtn.textContent = document.fullscreenElement ? '⛶ Salir de pantalla completa' : '⛶ Pantalla completa';
+  });
+
   // --- cargar / guardar ---
   fetch('/score/' + scoreId + '/notes', { headers: { 'Accept': 'application/json' } })
     .then(r => r.json()).then(d => {
@@ -146,6 +216,7 @@
       const maxEnd = notes.reduce((m, n) => Math.max(m, n.end), 0);
       width = Math.max(2000, maxEnd * PPS + 600);
       buildKeyboard(); render();
+      grid.appendChild(playhead);    // cabezal de reproducción (encima de las notas)
       notesEl.scrollTop = yOf(72);   // centrar cerca del Do central
     });
 
