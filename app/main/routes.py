@@ -2,8 +2,8 @@ import os
 import tempfile
 import uuid
 
-from flask import (Blueprint, abort, flash, redirect, render_template,
-                   request, send_file, url_for)
+from flask import (Blueprint, abort, current_app, flash, redirect,
+                   render_template, request, send_file, url_for)
 from flask_login import current_user
 from werkzeug.utils import secure_filename
 
@@ -12,7 +12,7 @@ from ..audio import detect_audio_kind
 from ..auth.routes import verified_required
 from ..extensions import db
 from ..jobs import cancel as cancel_job
-from ..jobs import enqueue_transcription
+from ..jobs import enqueue_ingest, enqueue_transcription
 from ..models import Job, Score
 from .forms import UploadForm
 
@@ -58,6 +58,41 @@ def upload():
     src = os.path.join(work_dir, f"{uuid.uuid4().hex}.{kind}")
     f.save(src)
     job = enqueue_transcription(current_user.id, src, work_dir, title, stems)
+    return redirect(url_for("main.job_view", job_id=job.id))
+
+
+@bp.post("/ingest")
+@verified_required
+def ingest():
+    from ..ingest import (HARD_CAP_SECONDS, SOFT_CAP_SECONDS, is_allowed_url,
+                          probe)
+    from ..pipeline import STEM_MAP
+
+    url = (request.form.get("url") or "").strip()
+    # Allowlist validada ACÁ, antes de tocar yt-dlp (§6.4). Corta SSRF/dominios arbitrarios.
+    if not is_allowed_url(url):
+        flash("Link no permitido. Solo YouTube, Instagram o TikTok.")
+        return redirect(url_for("auth.dashboard"))
+
+    stems = [s for s in request.form.getlist("stems") if s in STEM_MAP]
+    confirmed = request.form.get("confirm") == "1"
+    try:
+        duration, title = probe(url)
+    except Exception:
+        current_app.logger.warning("probe de URL falló", exc_info=True)  # sin contenido (§logging)
+        flash("No se pudo leer el link.")
+        return redirect(url_for("auth.dashboard"))
+
+    # Tope duro server-side, no evadible por el usuario (§4.85, §6.26).
+    if duration is not None and duration > HARD_CAP_SECONDS:
+        flash("El contenido supera el tope de 60 minutos.")
+        return redirect(url_for("auth.dashboard"))
+    # Advertencia blanda (UX): pedir confirmación explícita si supera 15 min.
+    if duration is not None and duration > SOFT_CAP_SECONDS and not confirmed:
+        return render_template("confirm_long.html", url=url, stems=stems, minutes=duration // 60)
+
+    work_dir = tempfile.mkdtemp(prefix="clavis_")
+    job = enqueue_ingest(current_user.id, url, work_dir, title, stems)
     return redirect(url_for("main.job_view", job_id=job.id))
 
 

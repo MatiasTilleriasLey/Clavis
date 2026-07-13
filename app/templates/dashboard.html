@@ -34,6 +34,32 @@
   </form>
 </div>
 
+<div class="card" style="margin-bottom:16px">
+  <span class="label">Desde un link</span>
+  <h3>YouTube · Instagram · TikTok</h3>
+  <p class="muted" style="margin-bottom:16px">Pegá el link; descargamos solo el audio.</p>
+  <form method="post" action="{{ url_for('main.ingest') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field">
+      <input type="url" name="url" placeholder="https://www.youtube.com/watch?v=…" required>
+    </div>
+    <fieldset style="border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px">
+      <legend class="label">Separar instrumentos (opcional)</legend>
+      <div id="stems-url" style="display:flex; flex-wrap:wrap; gap:12px">
+        {% for value, label in [('voz','Voz'),('bateria','Batería'),('bajo','Bajo'),
+                                ('guitarra','Guitarra'),('piano','Piano'),('otros','Otros')] %}
+        <label><input type="checkbox" name="stems" value="{{ value }}"> {{ label }}</label>
+        {% endfor %}
+      </div>
+      <button type="button" class="btn btn--ghost" style="margin-top:10px"
+              onclick="document.querySelectorAll('#stems-url input').forEach(function(c){c.checked=true})">
+        Extraer todos
+      </button>
+    </fieldset>
+    <button type="submit">Transcribir desde el link</button>
+  </form>
+</div>
+
 {% if scores %}
   <div class="grid">
     {% for s in scores %}

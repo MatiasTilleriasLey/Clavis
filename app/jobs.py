@@ -42,6 +42,46 @@ def enqueue_transcription(user_id, audio_path, work_dir, title, stems=None):
     return job
 
 
+def enqueue_ingest(user_id, url, work_dir, title, stems=None):
+    """Job que descarga por URL (yt-dlp) y transcribe. La allowlist ya se validó en la ruta."""
+    from flask import current_app
+    from .models import Job
+
+    stems = stems or []
+    job = Job(user_id=user_id, status="queued", work_dir=work_dir)
+    db.session.add(job)
+    db.session.commit()
+
+    if current_app.config.get("RQ_ASYNC", True):
+        q = Queue(QUEUE_NAME, connection=_redis())
+        rq_job = q.enqueue("app.jobs.ingest_job", job.id, url, work_dir, user_id, title, stems,
+                           job_timeout=JOB_TIMEOUT)
+        job.rq_id = rq_job.id
+        db.session.commit()
+    else:
+        ingest_job(job.id, url, work_dir, user_id, title, stems)
+    return job
+
+
+def ingest_job(job_id, url, work_dir, user_id, title, stems=None):
+    from flask import current_app, has_app_context
+    stems = stems or []
+
+    def work(app):
+        from .ingest import HARD_CAP_SECONDS, download_audio
+        audio_path = download_audio(url, work_dir, HARD_CAP_SECONDS)
+        return _transcribe_and_store(audio_path, work_dir, user_id, title, stems, app)
+
+    if has_app_context():
+        app = current_app._get_current_object()
+        _execute(job_id, work_dir, app, lambda: work(app))
+        return
+    from app import create_app
+    app = create_app()
+    with app.app_context():
+        _execute(job_id, work_dir, app, lambda: work(app))
+
+
 def cancel(job, redis_conn):
     """Cancela el job en RQ (encolado o corriendo). Ownership se verifica en la ruta."""
     if job.rq_id:
@@ -93,7 +133,33 @@ def _transcribe_one(wav, out_dir, instrument, title, user_id, app):
     return score
 
 
-def _run(job_id, audio_path, work_dir, user_id, title, stems, app):
+def _transcribe_and_store(audio_path, work_dir, user_id, title, stems, app):
+    """Mezcla o stems -> uno o varios Score. Devuelve la lista (ya en la sesión, commiteada)."""
+    if stems:
+        stem_paths = separate_stems(audio_path, work_dir, stems)  # {instrumento: wav}
+        if not stem_paths:
+            raise RuntimeError("sin stems")
+        units = list(stem_paths.items())
+    else:
+        units = [("mezcla", audio_path)]
+
+    scores = []
+    for instrument, wav in units:
+        out_dir = os.path.join(work_dir, f"out_{instrument}")
+        os.makedirs(out_dir, exist_ok=True)
+        scores.append(_transcribe_one(wav, out_dir, instrument, title, user_id, app))
+        if wav != audio_path:
+            try:
+                os.remove(wav)  # limpiar el stem WAV apenas se transcribió (§6.16)
+            except OSError:
+                pass
+    db.session.commit()
+    return scores
+
+
+def _execute(job_id, work_dir, app, produce_scores):
+    """Envuelve el ciclo de estado/errores/cleanup común a upload y URL.
+    produce_scores() hace el trabajo pesado y devuelve la lista de Score."""
     from .models import Job
     job = db.session.get(Job, job_id)
     if job is None or job.status == "canceled":
@@ -102,35 +168,22 @@ def _run(job_id, audio_path, work_dir, user_id, title, stems, app):
     job.status = "started"
     db.session.commit()
     try:
-        if stems:
-            stem_paths = separate_stems(audio_path, work_dir, stems)  # {instrumento: wav}
-            if not stem_paths:
-                raise RuntimeError("sin stems")
-            units = list(stem_paths.items())
-        else:
-            units = [("mezcla", audio_path)]
-
-        scores = []
-        for instrument, wav in units:
-            out_dir = os.path.join(work_dir, f"out_{instrument}")
-            os.makedirs(out_dir, exist_ok=True)
-            scores.append(_transcribe_one(wav, out_dir, instrument, title, user_id, app))
-            if wav != audio_path:
-                try:
-                    os.remove(wav)  # limpiar el stem WAV apenas se transcribió (§6.16)
-                except OSError:
-                    pass
-        db.session.commit()
+        scores = produce_scores()
         job.status = "finished"
         job.score_id = scores[0].id
         db.session.commit()
     except Exception:
         db.session.rollback()
-        app.logger.warning("job de transcripción falló", exc_info=True)  # sin contenido (§logging)
+        app.logger.warning("job falló", exc_info=True)  # sin contenido (§logging)
         job = db.session.get(Job, job_id)
         if job is not None:
             job.status = "failed"
-            job.error = "transcription_error"
+            job.error = "job_error"
             db.session.commit()
     finally:
-        shutil.rmtree(work_dir, ignore_errors=True)  # audio original nunca se persiste
+        shutil.rmtree(work_dir, ignore_errors=True)  # audio/original nunca se persiste
+
+
+def _run(job_id, audio_path, work_dir, user_id, title, stems, app):
+    _execute(job_id, work_dir, app,
+             lambda: _transcribe_and_store(audio_path, work_dir, user_id, title, stems, app))

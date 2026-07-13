@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Contenido largo — Clavis{% endblock %}
+{% block content %}
+<div class="card auth-card">
+  <h1>¿Seguro que querés continuar?</h1>
+  <p class="muted">
+    Este contenido dura más de 15 minutos ({{ minutes }} min aprox.). Sin GPU, la transcripción
+    puede tardar bastante y degradar el rendimiento del sistema.
+  </p>
+  <form method="post" action="{{ url_for('main.ingest') }}">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="url" value="{{ url }}">
+    <input type="hidden" name="confirm" value="1">
+    {% for s in stems %}<input type="hidden" name="stems" value="{{ s }}">{% endfor %}
+    <button type="submit">Sí, continuar</button>
+  </form>
+  <p class="links"><a href="{{ url_for('auth.dashboard') }}">Cancelar</a></p>
+</div>
+{% endblock %}

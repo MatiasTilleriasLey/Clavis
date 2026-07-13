@@ -19,6 +19,10 @@ $PIP install demucs
 # Cola de jobs
 $PIP install "rq==2.6.0"
 
+# yt-dlp pineado. IMPORTANTE (§6.8): actualizarlo seguido — cambia por los extractors de
+# YouTube/IG/TikTok y acumula CVEs si queda viejo.  pip install -U yt-dlp
+$PIP install "yt-dlp==2025.6.9"
+
 echo "ML deps instaladas. Inferencia: ONNX. Separación: Demucs/torch CPU."
 
 # MuseScore 4 para export PDF (headless). El AppImage se extrae sin root ni FUSE.

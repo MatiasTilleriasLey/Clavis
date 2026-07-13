@@ -124,6 +124,20 @@ def run():
                                content_type="multipart/form-data")
     assert r.status_code == 302 and "/login" in r.headers["Location"], "upload sin auth permitido"
 
+    # --- Ingesta por URL: allowlist en la ruta (paso 12, §6.4) ---
+    # 8c-bis. Dominio no permitido => rechazado sin tocar yt-dlp, sin crear job.
+    with app.app_context():
+        jobs_before = db.session.scalar(db.select(db.func.count()).select_from(Job))
+    r = client.post("/ingest", data={"url": "http://169.254.169.254/latest/meta"},
+                    follow_redirects=True)
+    assert b"no permitido" in r.data, "no rechazó un dominio fuera de la allowlist"
+    with app.app_context():
+        jobs_after = db.session.scalar(db.select(db.func.count()).select_from(Job))
+    assert jobs_before == jobs_after, "creó un job para un dominio no permitido"
+    # 8c-ter. /ingest sin sesión => redirige a login.
+    r = app.test_client().post("/ingest", data={"url": "https://youtu.be/x"})
+    assert r.status_code == 302 and "/login" in r.headers["Location"], "ingest sin auth permitido"
+
     # --- IDOR / aislamiento multiusuario (paso 9, §4.8) ---
     with app.app_context():
         a = db.session.scalar(db.select(User).filter_by(email="a@x.com"))
@@ -194,7 +208,7 @@ def run():
                follow_redirects=True)
     assert b"Dashboard" in r.data, "la contraseña nueva no sirvió"
 
-    print("OK: auth + reset + upload + stems + IDOR + jobs verificado (24 aserciones)")
+    print("OK: auth + reset + upload + stems + allowlist + IDOR + jobs (27 aserciones)")
 
 
 if __name__ == "__main__":
