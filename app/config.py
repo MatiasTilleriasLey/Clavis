@@ -17,6 +17,9 @@ class Config:
     # Límite duro de tamaño de upload (threat model §6.7). Werkzeug corta con 413.
     MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100 MB
 
+    # Binario de MuseScore (AppRun del AppImage extraído) para export PDF. Ver scripts/install_ml.sh.
+    MSCORE_BIN = os.environ.get("MSCORE_BIN")
+
     # Cookies de sesión endurecidas (threat model §6.20). Secure exige TLS, que ya usamos.
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SECURE = True

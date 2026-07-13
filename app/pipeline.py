@@ -6,7 +6,8 @@ en el arranque del web app ni si el proceso nunca transcribe."""
 import os
 import subprocess
 
-FFMPEG_TIMEOUT = 120  # s; el límite de duración de contenido es aparte (paso 12)
+FFMPEG_TIMEOUT = 120     # s; el límite de duración de contenido es aparte (paso 12)
+MUSESCORE_TIMEOUT = 180  # más generoso: MuseScore arranca lento en headless
 
 
 def normalize_audio(src, dst):
@@ -32,6 +33,15 @@ def midi_to_musicxml(midi_path, xml_path):
     except Exception:
         pass
     score.write("musicxml", fp=xml_path)
+
+
+def musicxml_to_pdf(xml_path, pdf_path, mscore_bin):
+    """MusicXML -> PDF con MuseScore CLI headless. shell=False, timeout, offscreen (§6.5)."""
+    env = dict(os.environ, QT_QPA_PLATFORM="offscreen")
+    subprocess.run(
+        [mscore_bin, "-o", pdf_path, xml_path],
+        check=True, timeout=MUSESCORE_TIMEOUT, capture_output=True, shell=False, env=env,
+    )
 
 
 def transcribe(audio_path, work_dir):
