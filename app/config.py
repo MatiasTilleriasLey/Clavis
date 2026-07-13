@@ -14,6 +14,9 @@ class Config:
     # DEBUG nunca on por accidente: solo si FLASK_DEBUG=1 explícito.
     DEBUG = os.environ.get("FLASK_DEBUG") == "1"
 
+    # Límite duro de tamaño de upload (threat model §6.7). Werkzeug corta con 413.
+    MAX_CONTENT_LENGTH = 100 * 1024 * 1024  # 100 MB
+
     # Cookies de sesión endurecidas (threat model §6.20). Secure exige TLS, que ya usamos.
     SESSION_COOKIE_HTTPONLY = True
     SESSION_COOKIE_SECURE = True

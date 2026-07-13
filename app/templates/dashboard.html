@@ -3,10 +3,24 @@
 {% block content %}
 <span class="label">Dashboard</span>
 <h1 class="hero__title" style="font-size:32px">Mis partituras</h1>
+
+<div class="card" style="margin-bottom:16px">
+  <span class="label">Nueva transcripción</span>
+  <h3>Subir audio</h3>
+  <p class="muted" style="margin-bottom:16px">MP3, WAV, M4A o MP4 — hasta 100 MB.</p>
+  <form method="post" action="{{ url_for('main.upload') }}" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field">
+      <input type="file" name="audio" accept=".mp3,.wav,.m4a,.mp4" required>
+    </div>
+    <button type="submit">Subir</button>
+  </form>
+</div>
+
 <div class="card">
   <div class="empty">
     <p>Todavía no tenés partituras.</p>
-    <p class="muted">La transcripción de audio llega en la próxima etapa.</p>
+    <p class="muted">Se listarán acá cuando el pipeline de transcripción esté activo.</p>
   </div>
 </div>
 {% endblock %}

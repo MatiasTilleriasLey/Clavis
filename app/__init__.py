@@ -1,5 +1,6 @@
 import redis
-from flask import Flask, abort, redirect, render_template, request, url_for
+from flask import (Flask, abort, flash, redirect, render_template, request,
+                   url_for)
 from sqlalchemy import text
 
 from .config import Config
@@ -36,8 +37,15 @@ def create_app(config_object=Config):
                 abort(403)
 
     from .auth import bp as auth_bp
+    from .main import bp as main_bp
 
     app.register_blueprint(auth_bp)
+    app.register_blueprint(main_bp)
+
+    @app.errorhandler(413)
+    def too_large(e):
+        flash("El archivo supera el límite de 100 MB.")
+        return redirect(url_for("auth.dashboard"))
 
     @app.get("/")
     def index():

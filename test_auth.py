@@ -2,6 +2,7 @@
 o directamente .venv/bin/python test_auth.py (usa asserts, sin framework obligatorio)."""
 import os
 import re
+from io import BytesIO
 
 # Config mínima para importar app.config sin un .env real.
 os.environ.setdefault("SECRET_KEY", "test-secret")
@@ -77,6 +78,24 @@ def run():
     r = app.test_client().get("/dashboard")
     assert r.status_code == 302 and "/login" in r.headers["Location"]
 
+    # --- Upload (paso 5), con `client` logueado y verificado ---
+    def up(cl, data, name):
+        return cl.post("/upload", data={"audio": (BytesIO(data), name)},
+                       content_type="multipart/form-data", follow_redirects=True)
+
+    # 8a. WAV válido => validado.
+    r = up(client, b"RIFF\x24\x08\x00\x00WAVEfmt ", "song.wav")
+    assert b"validado" in r.data, "WAV válido rechazado"
+
+    # 8b. Magic bytes mandan sobre la extensión: .wav con contenido no-audio => rechazado.
+    r = up(client, b"<?xml version='1.0'?><x/>", "fake.wav")
+    assert b"no parece un audio" in r.data, "aceptó un archivo por su extensión, no su contenido"
+
+    # 8c. Sin sesión => no se puede subir (redirige a login).
+    r = app.test_client().post("/upload", data={"audio": (BytesIO(b"RIFF...WAVE.."), "x.wav")},
+                               content_type="multipart/form-data")
+    assert r.status_code == 302 and "/login" in r.headers["Location"], "upload sin auth permitido"
+
     # --- Reseteo de contraseña (paso 3) ---
     anon = app.test_client()  # sin sesión: forgot-password redirige si estás logueado
     # 9. forgot-password de email existente => manda 1 mail con token de reset.
@@ -108,7 +127,7 @@ def run():
                follow_redirects=True)
     assert b"Dashboard" in r.data, "la contraseña nueva no sirvió"
 
-    print("OK: flujo de auth + reset verificado (12 aserciones de seguridad)")
+    print("OK: flujo de auth + reset + upload verificado (15 aserciones de seguridad)")
 
 
 if __name__ == "__main__":
