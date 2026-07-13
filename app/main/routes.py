@@ -4,12 +4,12 @@ import uuid
 
 from flask import (Blueprint, abort, current_app, flash, redirect,
                    render_template, request, send_file, url_for)
-from flask_login import current_user
+from flask_login import current_user, login_required
 from werkzeug.utils import secure_filename
 
-from .. import storage
+from .. import mailer, storage
 from ..audio import detect_audio_kind
-from ..auth.routes import admin_required, verified_required
+from ..auth.routes import admin_required
 from ..extensions import db
 from ..jobs import cancel as cancel_job
 from ..jobs import enqueue_ingest, enqueue_transcription
@@ -31,7 +31,7 @@ def _owned_job(job_id):
 
 
 @bp.post("/upload")
-@verified_required
+@login_required
 def upload():
     form = UploadForm()
     if not form.validate_on_submit():
@@ -62,7 +62,7 @@ def upload():
 
 
 @bp.post("/ingest")
-@verified_required
+@login_required
 def ingest():
     from ..ingest import (HARD_CAP_SECONDS, SOFT_CAP_SECONDS, is_allowed_url,
                           probe)
@@ -97,21 +97,21 @@ def ingest():
 
 
 @bp.get("/job/<int:job_id>")
-@verified_required
+@login_required
 def job_view(job_id):
     job = _owned_job(job_id)
     return render_template("job.html", job=job)
 
 
 @bp.get("/job/<int:job_id>/status")
-@verified_required
+@login_required
 def job_status(job_id):
     job = _owned_job(job_id)
     return {"status": job.status, "stage": job.stage, "score_id": job.score_id}
 
 
 @bp.post("/job/<int:job_id>/cancel")
-@verified_required
+@login_required
 def job_cancel(job_id):
     job = _owned_job(job_id)
     if job.status in ("queued", "started"):
@@ -129,14 +129,14 @@ def job_cancel(job_id):
 
 
 @bp.get("/score/<int:score_id>")
-@verified_required
+@login_required
 def score_view(score_id):
     score = _owned_score(score_id)
     return render_template("score.html", score=score)
 
 
 @bp.get("/score/<int:score_id>/musicxml")
-@verified_required
+@login_required
 def score_musicxml(score_id):
     score = _owned_score(score_id)
     path = storage.path_for(current_user.id, score.stored_uuid, "musicxml")
@@ -146,7 +146,7 @@ def score_musicxml(score_id):
 
 
 @bp.get("/score/<int:score_id>/pdf")
-@verified_required
+@login_required
 def score_pdf(score_id):
     score = _owned_score(score_id)
     path = storage.path_for(current_user.id, score.stored_uuid, "pdf")
@@ -162,11 +162,44 @@ def admin():
     from sqlalchemy import func
     users = User.query.order_by(User.created_at.desc()).all()
     job_counts = dict(db.session.query(Job.status, func.count()).group_by(Job.status).all())
-    return render_template("admin.html", users=users, job_counts=job_counts)
+    return render_template("admin.html", users=users, job_counts=job_counts,
+                           smtp_ok=mailer.is_configured())
+
+
+@bp.post("/admin/user/<int:user_id>/promote")
+@admin_required
+def admin_promote(user_id):
+    user = db.session.get(User, user_id) or abort(404)
+    user.is_admin = True
+    db.session.commit()
+    flash(f"{user.email} ahora es admin.")
+    return redirect(url_for("main.admin"))
+
+
+@bp.route("/admin/smtp", methods=["GET", "POST"])
+@admin_required
+def admin_smtp():
+    from ..models import Setting
+    keys = ("smtp_host", "smtp_port", "smtp_username", "smtp_from")
+    if request.method == "POST":
+        for k in keys:
+            Setting.put(k, (request.form.get(k) or "").strip())
+        Setting.put("smtp_tls", "1" if request.form.get("smtp_tls") else "0")
+        # La contraseña solo se actualiza si se ingresó una nueva (no se borra al editar el resto).
+        pw = request.form.get("smtp_password")
+        if pw:
+            Setting.put("smtp_password", pw)
+        db.session.commit()
+        flash("Configuración SMTP guardada.")
+        return redirect(url_for("main.admin_smtp"))
+    current = {k: Setting.get(k, "") for k in keys}
+    current["smtp_tls"] = Setting.get("smtp_tls", "0")
+    current["has_password"] = bool(Setting.get("smtp_password"))
+    return render_template("admin_smtp.html", cfg=current)
 
 
 @bp.post("/score/<int:score_id>/delete")
-@verified_required
+@login_required
 def score_delete(score_id):
     score = _owned_score(score_id)
     storage.delete(current_user.id, score.stored_uuid)

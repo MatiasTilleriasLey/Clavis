@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block title %}Verificación en dos pasos — Clavis{% endblock %}
+{% block content %}
+<div class="card auth-card">
+  <h1>Código de verificación</h1>
+  <p class="muted">Ingresá el código de 6 dígitos de tu app de autenticación.</p>
+  <form method="post">
+    {{ form.hidden_tag() }}
+    <div class="field">
+      {{ form.code.label }} {{ form.code(autocomplete="one-time-code", inputmode="numeric") }}
+      {% for e in form.code.errors %}<span class="error">{{ e }}</span>{% endfor %}
+    </div>
+    {{ form.submit() }}
+  </form>
+</div>
+{% endblock %}

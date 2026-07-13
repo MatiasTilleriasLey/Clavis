@@ -10,9 +10,10 @@ argon2-cffi==23.1.0
 Flask-Login==0.6.3
 Flask-Limiter==3.8.0
 Flask-WTF==1.2.2
-Flask-Mail==0.10.0
 email-validator==2.2.0
 rq==2.6.0
+pyotp==2.9.0
+qrcode==8.0
 
 # Pipeline ML (basic-pitch/music21/librosa): instalar con scripts/install_ml.sh
 # (basic-pitch tiene un pin de TensorFlow roto para py3.12; usamos backend ONNX --no-deps).

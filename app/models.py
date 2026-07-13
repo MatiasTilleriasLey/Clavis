@@ -21,9 +21,10 @@ class User(UserMixin, db.Model):
 
     id = db.Column(db.Integer, primary_key=True)
     email = db.Column(db.String(254), unique=True, nullable=False, index=True)
+    name = db.Column(db.String(80), nullable=False, server_default="")
     password_hash = db.Column(db.String(255), nullable=False)
-    email_verified = db.Column(db.Boolean, nullable=False, default=False)
     is_admin = db.Column(db.Boolean, nullable=False, default=False)  # rol explícito (§4.8)
+    totp_secret = db.Column(db.String(32), nullable=True)  # 2FA opcional; no-null => activo
     created_at = db.Column(db.DateTime(timezone=True), nullable=False, default=_now)
 
     def set_password(self, password):
@@ -34,6 +35,33 @@ class User(UserMixin, db.Model):
             return _ph.verify(self.password_hash, password)
         except Argon2Error:
             return False
+
+    @property
+    def has_2fa(self):
+        return bool(self.totp_secret)
+
+
+class Setting(db.Model):
+    """Config editable por admin (ej. SMTP). Key-value simple; el SMTP password vive acá,
+    no en el repo (§6.32) — la DB es el trust boundary en el despliegue LAN."""
+
+    __tablename__ = "settings"
+
+    key = db.Column(db.String(40), primary_key=True)
+    value = db.Column(db.Text, nullable=True)
+
+    @classmethod
+    def get(cls, key, default=None):
+        row = db.session.get(cls, key)
+        return row.value if row is not None and row.value is not None else default
+
+    @classmethod
+    def put(cls, key, value):
+        row = db.session.get(cls, key)
+        if row is None:
+            row = cls(key=key)
+            db.session.add(row)
+        row.value = value
 
 
 class Score(db.Model):

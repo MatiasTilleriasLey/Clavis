@@ -1,0 +1,46 @@
+{% extends "base.html" %}
+{% block title %}Mi perfil — Clavis{% endblock %}
+{% block content %}
+<span class="label">Perfil</span>
+<h1 class="hero__title" style="font-size:32px">{{ current_user.name or current_user.email }}</h1>
+
+<div class="card auth-card" style="margin-bottom:16px">
+  <h3>Cambiar email</h3>
+  <form method="post" action="{{ url_for('auth.change_email') }}">
+    {{ email_form.hidden_tag() }}
+    <div class="field">{{ email_form.email.label }} {{ email_form.email() }}</div>
+    <div class="field">{{ email_form.current_password.label }} {{ email_form.current_password() }}</div>
+    {{ email_form.submit() }}
+  </form>
+</div>
+
+<div class="card auth-card" style="margin-bottom:16px">
+  <h3>Cambiar contraseña</h3>
+  <form method="post" action="{{ url_for('auth.change_password') }}">
+    {{ pw_form.hidden_tag() }}
+    <div class="field">{{ pw_form.current_password.label }} {{ pw_form.current_password() }}</div>
+    <div class="field">{{ pw_form.new_password.label }} {{ pw_form.new_password() }}</div>
+    {{ pw_form.submit() }}
+  </form>
+</div>
+
+<div class="card auth-card">
+  <h3>Autenticación en dos pasos (2FA)</h3>
+  {% if current_user.has_2fa %}
+    <p class="muted">Está <strong>activada</strong>.</p>
+    <form method="post" action="{{ url_for('auth.twofa_disable') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <div class="field">
+        <label>Contraseña actual <input type="password" name="current_password" required></label>
+      </div>
+      <button type="submit" class="btn btn--ghost">Desactivar 2FA</button>
+    </form>
+  {% else %}
+    <p class="muted">Sumá una capa extra con una app de autenticación (Google Authenticator, Aegis, etc.).</p>
+    <form method="post" action="{{ url_for('auth.twofa_setup') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <button type="submit">Activar 2FA</button>
+    </form>
+  {% endif %}
+</div>
+{% endblock %}

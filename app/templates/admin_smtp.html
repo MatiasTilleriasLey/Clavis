@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block title %}SMTP — Clavis{% endblock %}
+{% block content %}
+<div class="card auth-card">
+  <h1>Configuración SMTP</h1>
+  <p class="muted">Se usa para notificar cuando un trabajo queda listo y para el reseteo de
+    contraseña. Es opcional: si no lo configurás, esas notificaciones simplemente no se envían.</p>
+  <form method="post">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="field"><label>Servidor <input type="text" name="smtp_host" value="{{ cfg.smtp_host }}" placeholder="smtp.gmail.com"></label></div>
+    <div class="field"><label>Puerto <input type="number" name="smtp_port" value="{{ cfg.smtp_port }}" placeholder="587"></label></div>
+    <div class="field"><label>Usuario <input type="text" name="smtp_username" value="{{ cfg.smtp_username }}"></label></div>
+    <div class="field"><label>Contraseña <input type="password" name="smtp_password" placeholder="{{ '•••••• (guardada)' if cfg.has_password else '' }}"></label></div>
+    <div class="field"><label>Remitente (From) <input type="text" name="smtp_from" value="{{ cfg.smtp_from }}" placeholder="clavis@tu-dominio"></label></div>
+    <div class="field"><label><input type="checkbox" name="smtp_tls" {{ 'checked' if cfg.smtp_tls == '1' }}> Usar STARTTLS</label></div>
+    <button type="submit">Guardar</button>
+  </form>
+  <p class="links"><a href="{{ url_for('main.admin') }}">← Volver al panel</a></p>
+</div>
+{% endblock %}

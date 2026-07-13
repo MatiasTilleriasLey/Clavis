@@ -5,7 +5,7 @@ from flask import (Flask, abort, flash, redirect, render_template, request,
 from sqlalchemy import text
 
 from .config import Config
-from .extensions import csrf, db, limiter, login_manager, mail, migrate
+from .extensions import csrf, db, limiter, login_manager, migrate
 
 
 def create_app(config_object=Config):
@@ -16,7 +16,6 @@ def create_app(config_object=Config):
     migrate.init_app(app, db)
     login_manager.init_app(app)
     csrf.init_app(app)
-    mail.init_app(app)
     limiter.init_app(app)
 
     login_manager.login_view = "auth.login"

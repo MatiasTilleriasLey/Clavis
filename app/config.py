@@ -14,6 +14,9 @@ class Config:
     # Jobs de transcripción encolados en RQ (False => inline, solo para tests).
     RQ_ASYNC = True
 
+    # URL base para armar links en mails (el worker no tiene request context).
+    BASE_URL = os.environ.get("BASE_URL", "https://127.0.0.1:8443")
+
     # DEBUG nunca on por accidente: solo si FLASK_DEBUG=1 explícito.
     DEBUG = os.environ.get("FLASK_DEBUG") == "1"
 
@@ -32,11 +35,4 @@ class Config:
     SESSION_COOKIE_SECURE = True
     SESSION_COOKIE_SAMESITE = "Strict"
 
-    # SMTP (verificación de email + reseteo). Default = Mailpit en dev.
-    # ponytail: solo config; el envío real se implementa con auth (pasos 2-3).
-    MAIL_SERVER = os.environ.get("MAIL_SERVER", "localhost")
-    MAIL_PORT = int(os.environ.get("MAIL_PORT", "1026"))
-    MAIL_USERNAME = os.environ.get("MAIL_USERNAME") or None
-    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD") or None
-    MAIL_USE_TLS = os.environ.get("MAIL_USE_TLS") == "1"
-    MAIL_DEFAULT_SENDER = os.environ.get("MAIL_DEFAULT_SENDER", "clavis@localhost")
+    # SMTP ya no vive en config: lo configura el admin en runtime (tabla Setting, app/mailer.py).

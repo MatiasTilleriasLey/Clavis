@@ -5,6 +5,14 @@
 <h1 class="hero__title" style="font-size:32px">Panel</h1>
 
 <div class="card" style="margin-bottom:16px">
+  <span class="label">SMTP</span>
+  <p class="muted" style="margin:8px 0">
+    Estado: <strong>{{ 'configurado' if smtp_ok else 'sin configurar' }}</strong>
+    · <a href="{{ url_for('main.admin_smtp') }}">Configurar</a>
+  </p>
+</div>
+
+<div class="card" style="margin-bottom:16px">
   <span class="label">Cola de jobs</span>
   <p class="muted" style="margin-top:8px">
     {% for status in ['queued','started','finished','failed','canceled'] %}
@@ -18,15 +26,25 @@
   <div style="overflow-x:auto; margin-top:12px">
     <table style="width:100%; border-collapse:collapse">
       <thead><tr style="text-align:left; color:var(--text-2)">
-        <th style="padding:6px 12px 6px 0">Email</th><th>Verificado</th><th>Admin</th><th>Alta</th>
+        <th style="padding:6px 12px 6px 0">Nombre</th><th>Email</th><th>Admin</th>
+        <th>2FA</th><th>Alta</th><th></th>
       </tr></thead>
       <tbody>
         {% for u in users %}
         <tr style="border-top:1px solid var(--border)">
-          <td style="padding:6px 12px 6px 0">{{ u.email }}</td>
-          <td>{{ 'sí' if u.email_verified else 'no' }}</td>
+          <td style="padding:6px 12px 6px 0">{{ u.name }}</td>
+          <td>{{ u.email }}</td>
           <td>{{ 'sí' if u.is_admin else '—' }}</td>
+          <td>{{ 'sí' if u.has_2fa else '—' }}</td>
           <td class="muted">{{ u.created_at.strftime('%Y-%m-%d') }}</td>
+          <td>
+            {% if not u.is_admin %}
+            <form method="post" action="{{ url_for('main.admin_promote', user_id=u.id) }}">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+              <button type="submit" class="btn btn--ghost">Hacer admin</button>
+            </form>
+            {% endif %}
+          </td>
         </tr>
         {% endfor %}
       </tbody>

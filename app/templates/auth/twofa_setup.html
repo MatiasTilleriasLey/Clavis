@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Activar 2FA — Clavis{% endblock %}
+{% block content %}
+<div class="card auth-card">
+  <h1>Activar 2FA</h1>
+  <p class="muted">Escaneá el QR con tu app de autenticación y después ingresá el código para confirmar.</p>
+  <div style="background:#fff; padding:16px; border-radius:8px; width:220px; margin:12px 0">
+    {{ qr_svg | safe }}  {# SVG generado internamente (matriz QR), sin datos de usuario como texto #}
+  </div>
+  <p class="muted" style="font-size:13px">¿No podés escanear? Cargá esta clave manualmente:<br>
+    <code>{{ secret }}</code></p>
+  <form method="post" action="{{ url_for('auth.twofa_enable') }}">
+    {{ form.hidden_tag() }}
+    <div class="field">
+      {{ form.code.label }} {{ form.code(autocomplete="one-time-code", inputmode="numeric") }}
+      {% for e in form.code.errors %}<span class="error">{{ e }}</span>{% endfor %}
+    </div>
+    {{ form.submit() }}
+  </form>
+  <p class="links"><a href="{{ url_for('auth.profile') }}">Cancelar</a></p>
+</div>
+{% endblock %}

@@ -169,6 +169,21 @@ def _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, stems, a
     return scores
 
 
+def _notify_ready(user_id, score_id, app):
+    """Avisa por mail que la partitura está lista (no-op si no hay SMTP configurado)."""
+    from . import mailer
+    from .models import User
+    try:
+        user = db.session.get(User, user_id)
+        if user is None:
+            return
+        link = f"{app.config.get('BASE_URL', '')}/score/{score_id}"
+        mailer.send(user.email, "Tu partitura de Clavis está lista",
+                    f"Hola {user.name or ''}\n\nTu transcripción terminó. Vela acá:\n{link}\n")
+    except Exception:
+        app.logger.warning("notificación de job falló", exc_info=True)
+
+
 def _execute(job_id, work_dir, app, produce_scores):
     """Envuelve el ciclo de estado/errores/cleanup común a upload y URL.
     produce_scores() hace el trabajo pesado y devuelve la lista de Score."""
@@ -184,6 +199,7 @@ def _execute(job_id, work_dir, app, produce_scores):
         job.status = "finished"
         job.score_id = scores[0].id
         db.session.commit()
+        _notify_ready(job.user_id, scores[0].id, app)
     except Exception:
         db.session.rollback()
         app.logger.warning("job falló", exc_info=True)  # sin contenido (§logging)
