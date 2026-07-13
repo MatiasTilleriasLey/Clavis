@@ -48,16 +48,14 @@ def upload():
         flash("El archivo no parece un audio válido (MP3/WAV/M4A/MP4).")
         return redirect(url_for("auth.dashboard"))
 
-    # Instrumentos elegidos, filtrados contra la allowlist STEM_MAP (nada externo al subprocess).
-    from ..pipeline import STEM_MAP
-    stems = [s for s in request.form.getlist("stems") if s in STEM_MAP]
+    separate = request.form.get("separate") == "1"  # aislar el piano de la mezcla (Demucs)
 
     title = (os.path.splitext(f.filename or "audio")[0] or "audio")[:200]  # solo display
     # work_dir persiste hasta que el worker termine y lo limpie (audio nunca se persiste).
     work_dir = tempfile.mkdtemp(prefix="clavis_")
     src = os.path.join(work_dir, f"{uuid.uuid4().hex}.{kind}")
     f.save(src)
-    job = enqueue_transcription(current_user.id, src, work_dir, title, stems)
+    job = enqueue_transcription(current_user.id, src, work_dir, title, separate)
     return redirect(url_for("main.job_view", job_id=job.id))
 
 
@@ -66,7 +64,6 @@ def upload():
 def ingest():
     from ..ingest import (HARD_CAP_SECONDS, SOFT_CAP_SECONDS, is_allowed_url,
                           probe)
-    from ..pipeline import STEM_MAP
 
     url = (request.form.get("url") or "").strip()
     # Allowlist validada ACÁ, antes de tocar yt-dlp (§6.4). Corta SSRF/dominios arbitrarios.
@@ -74,7 +71,7 @@ def ingest():
         flash("Link no permitido. Solo YouTube, Instagram o TikTok.")
         return redirect(url_for("auth.dashboard"))
 
-    stems = [s for s in request.form.getlist("stems") if s in STEM_MAP]
+    separate = request.form.get("separate") == "1"
     confirmed = request.form.get("confirm") == "1"
     try:
         duration, title = probe(url)
@@ -89,10 +86,10 @@ def ingest():
         return redirect(url_for("auth.dashboard"))
     # Advertencia blanda (UX): pedir confirmación explícita si supera 15 min.
     if duration is not None and duration > SOFT_CAP_SECONDS and not confirmed:
-        return render_template("confirm_long.html", url=url, stems=stems, minutes=duration // 60)
+        return render_template("confirm_long.html", url=url, separate=separate, minutes=duration // 60)
 
     work_dir = tempfile.mkdtemp(prefix="clavis_")
-    job = enqueue_ingest(current_user.id, url, work_dir, title, stems)
+    job = enqueue_ingest(current_user.id, url, work_dir, title, separate)
     return redirect(url_for("main.job_view", job_id=job.id))
 
 

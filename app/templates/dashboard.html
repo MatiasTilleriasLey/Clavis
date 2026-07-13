@@ -5,31 +5,18 @@
 <h1 class="hero__title" style="font-size:32px">Mis partituras</h1>
 
 <div class="card" style="margin-bottom:16px">
-  <span class="label">Nueva transcripción</span>
+  <span class="label">Nueva transcripción de piano</span>
   <h3>Subir audio</h3>
-  <p class="muted" style="margin-bottom:16px">MP3, WAV, M4A o MP4 — hasta 100 MB.</p>
+  <p class="muted" style="margin-bottom:16px">MP3, WAV, M4A o MP4 — hasta 100 MB. Ideal: piano solo.</p>
   <form method="post" action="{{ url_for('main.upload') }}" enctype="multipart/form-data">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="field">
       <input type="file" name="audio" accept=".mp3,.wav,.m4a,.mp4" required>
     </div>
-    <fieldset style="border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px">
-      <legend class="label">Separar instrumentos (opcional)</legend>
-      <div id="stems" style="display:flex; flex-wrap:wrap; gap:12px">
-        {% for value, label in [('voz','Voz'),('bateria','Batería'),('bajo','Bajo'),
-                                ('guitarra','Guitarra'),('piano','Piano'),('otros','Otros')] %}
-        <label><input type="checkbox" name="stems" value="{{ value }}"> {{ label }}</label>
-        {% endfor %}
-      </div>
-      <button type="button" class="btn btn--ghost" style="margin-top:10px"
-              onclick="document.querySelectorAll('#stems input').forEach(function(c){c.checked=true})">
-        Extraer todos
-      </button>
-      <p class="muted" style="margin:8px 0 0; font-size:13px">
-        Sin selección: transcribe la mezcla completa. Con selección: separa y transcribe cada
-        instrumento por separado (más lento, sin GPU).
-      </p>
-    </fieldset>
+    <label style="display:block; margin-bottom:12px">
+      <input type="checkbox" name="separate" value="1"> Aislar el piano de la mezcla
+      <span class="muted" style="font-size:13px">— para canciones con banda completa (usa Demucs, más lento)</span>
+    </label>
     <button type="submit">Subir y transcribir</button>
   </form>
 </div>
@@ -43,19 +30,10 @@
     <div class="field">
       <input type="url" name="url" placeholder="https://www.youtube.com/watch?v=…" required>
     </div>
-    <fieldset style="border:1px solid var(--border); border-radius:8px; padding:12px; margin-bottom:12px">
-      <legend class="label">Separar instrumentos (opcional)</legend>
-      <div id="stems-url" style="display:flex; flex-wrap:wrap; gap:12px">
-        {% for value, label in [('voz','Voz'),('bateria','Batería'),('bajo','Bajo'),
-                                ('guitarra','Guitarra'),('piano','Piano'),('otros','Otros')] %}
-        <label><input type="checkbox" name="stems" value="{{ value }}"> {{ label }}</label>
-        {% endfor %}
-      </div>
-      <button type="button" class="btn btn--ghost" style="margin-top:10px"
-              onclick="document.querySelectorAll('#stems-url input').forEach(function(c){c.checked=true})">
-        Extraer todos
-      </button>
-    </fieldset>
+    <label style="display:block; margin-bottom:12px">
+      <input type="checkbox" name="separate" value="1"> Aislar el piano de la mezcla
+      <span class="muted" style="font-size:13px">— para canciones con banda completa (usa Demucs, más lento)</span>
+    </label>
     <button type="submit">Transcribir desde el link</button>
   </form>
 </div>

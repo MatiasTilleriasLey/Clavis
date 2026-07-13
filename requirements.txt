@@ -15,5 +15,5 @@ rq==2.6.0
 pyotp==2.9.0
 qrcode==8.0
 
-# Pipeline ML (basic-pitch/music21/librosa): instalar con scripts/install_ml.sh
-# (basic-pitch tiene un pin de TensorFlow roto para py3.12; usamos backend ONNX --no-deps).
+# Pipeline ML (piano_transcription_inference/music21/librosa/demucs/torch): instalar con
+# scripts/install_ml.sh (maneja torch CPU-only y baja el checkpoint del modelo de piano).

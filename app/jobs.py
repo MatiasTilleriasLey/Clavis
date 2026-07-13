@@ -20,13 +20,12 @@ def _redis():
     return Redis.from_url(current_app.config["REDIS_URL"])
 
 
-def enqueue_transcription(user_id, audio_path, work_dir, title, stems=None):
+def enqueue_transcription(user_id, audio_path, work_dir, title, separate=False):
     """Crea el Job en DB y lo encola (o lo corre inline si RQ_ASYNC=False, para tests).
-    `stems`: lista de instrumentos a separar; vacío => transcribe la mezcla completa."""
+    `separate`: si True, aísla el piano de la mezcla (Demucs) antes de transcribir."""
     from flask import current_app
     from .models import Job
 
-    stems = stems or []
     job = Job(user_id=user_id, status="queued", work_dir=work_dir)
     db.session.add(job)
     db.session.commit()
@@ -34,44 +33,42 @@ def enqueue_transcription(user_id, audio_path, work_dir, title, stems=None):
     if current_app.config.get("RQ_ASYNC", True):
         q = Queue(QUEUE_NAME, connection=_redis())
         rq_job = q.enqueue("app.jobs.transcribe_job", job.id, audio_path, work_dir,
-                           user_id, title, stems, job_timeout=JOB_TIMEOUT)
+                           user_id, title, separate, job_timeout=JOB_TIMEOUT)
         job.rq_id = rq_job.id
         db.session.commit()
     else:
-        transcribe_job(job.id, audio_path, work_dir, user_id, title, stems)
+        transcribe_job(job.id, audio_path, work_dir, user_id, title, separate)
     return job
 
 
-def enqueue_ingest(user_id, url, work_dir, title, stems=None):
+def enqueue_ingest(user_id, url, work_dir, title, separate=False):
     """Job que descarga por URL (yt-dlp) y transcribe. La allowlist ya se validó en la ruta."""
     from flask import current_app
     from .models import Job
 
-    stems = stems or []
     job = Job(user_id=user_id, status="queued", work_dir=work_dir)
     db.session.add(job)
     db.session.commit()
 
     if current_app.config.get("RQ_ASYNC", True):
         q = Queue(QUEUE_NAME, connection=_redis())
-        rq_job = q.enqueue("app.jobs.ingest_job", job.id, url, work_dir, user_id, title, stems,
+        rq_job = q.enqueue("app.jobs.ingest_job", job.id, url, work_dir, user_id, title, separate,
                            job_timeout=JOB_TIMEOUT)
         job.rq_id = rq_job.id
         db.session.commit()
     else:
-        ingest_job(job.id, url, work_dir, user_id, title, stems)
+        ingest_job(job.id, url, work_dir, user_id, title, separate)
     return job
 
 
-def ingest_job(job_id, url, work_dir, user_id, title, stems=None):
+def ingest_job(job_id, url, work_dir, user_id, title, separate=False):
     from flask import current_app, has_app_context
-    stems = stems or []
 
     def work(app):
         from .ingest import HARD_CAP_SECONDS, download_audio
         _stage(job_id, "descargando audio")
         audio_path = download_audio(url, work_dir, HARD_CAP_SECONDS)
-        return _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, stems, app)
+        return _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, separate, app)
 
     if has_app_context():
         app = current_app._get_current_object()
@@ -98,25 +95,23 @@ def cancel(job, redis_conn):
             pass  # ya terminó o no existe; igual marcamos canceled abajo
 
 
-def transcribe_job(job_id, audio_path, work_dir, user_id, title, stems=None):
+def transcribe_job(job_id, audio_path, work_dir, user_id, title, separate=False):
     """Corre en el worker (sin app context) o inline en tests (con app context)."""
     from flask import current_app, has_app_context
 
-    stems = stems or []
     if has_app_context():
         app = current_app._get_current_object()
-        return _run(job_id, audio_path, work_dir, user_id, title, stems, app)
+        return _run(job_id, audio_path, work_dir, user_id, title, separate, app)
     from app import create_app
     app = create_app()
     with app.app_context():
-        return _run(job_id, audio_path, work_dir, user_id, title, stems, app)
+        return _run(job_id, audio_path, work_dir, user_id, title, separate, app)
 
 
-def _transcribe_one(wav, out_dir, instrument, title, user_id, app):
-    """Transcribe un WAV (mezcla o stem) -> crea y devuelve un Score (sin commit)."""
+def _transcribe_one(wav, out_dir, title, user_id, app):
+    """Transcribe un WAV de piano -> crea y devuelve un Score (sin commit)."""
     from .models import Score
-    display = title if instrument == "mezcla" else f"{title} — {instrument}"
-    xml = transcribe(wav, out_dir, instrument=instrument, title=display)
+    xml = transcribe(wav, out_dir, title=title)
     midi = os.path.join(out_dir, "notes.mid")
     pdf = None
     mscore = app.config.get("MSCORE_BIN")
@@ -130,7 +125,7 @@ def _transcribe_one(wav, out_dir, instrument, title, user_id, app):
     stored = uuid.uuid4().hex
     has_midi = os.path.exists(midi)
     storage.save(user_id, stored, xml, pdf, midi if has_midi else None)
-    score = Score(user_id=user_id, title=display, instrument=instrument, stored_uuid=stored,
+    score = Score(user_id=user_id, title=title, instrument="piano", stored_uuid=stored,
                   has_pdf=pdf is not None, has_midi=has_midi)
     db.session.add(score)
     return score
@@ -145,30 +140,27 @@ def _stage(job_id, text):
         db.session.commit()
 
 
-def _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, stems, app):
-    """Mezcla o stems -> uno o varios Score. Devuelve la lista (ya en la sesión, commiteada)."""
-    if stems:
-        _stage(job_id, "separando instrumentos")
-        stem_paths = separate_stems(audio_path, work_dir, stems)  # {instrumento: wav}
-        if not stem_paths:
-            raise RuntimeError("sin stems")
-        units = list(stem_paths.items())
-    else:
-        units = [("mezcla", audio_path)]
+def _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, separate, app):
+    """Transcribe el piano -> un Score. Si `separate`, aísla primero el piano de la mezcla."""
+    wav = audio_path
+    if separate:
+        _stage(job_id, "aislando el piano")
+        stems = separate_stems(audio_path, work_dir, ["piano"])  # Demucs, solo el stem de piano
+        wav = stems.get("piano")
+        if not wav:
+            raise RuntimeError("no se pudo aislar el piano")
 
-    scores = []
-    for instrument, wav in units:
-        _stage(job_id, f"transcribiendo {instrument}")
-        out_dir = os.path.join(work_dir, f"out_{instrument}")
-        os.makedirs(out_dir, exist_ok=True)
-        scores.append(_transcribe_one(wav, out_dir, instrument, title, user_id, app))
-        if wav != audio_path:
-            try:
-                os.remove(wav)  # limpiar el stem WAV apenas se transcribió (§6.16)
-            except OSError:
-                pass
+    _stage(job_id, "transcribiendo piano")
+    out_dir = os.path.join(work_dir, "out")
+    os.makedirs(out_dir, exist_ok=True)
+    score = _transcribe_one(wav, out_dir, title, user_id, app)
+    if wav != audio_path:
+        try:
+            os.remove(wav)  # limpiar el stem WAV apenas se transcribió (§6.16)
+        except OSError:
+            pass
     db.session.commit()
-    return scores
+    return [score]
 
 
 def _notify_ready(user_id, score_id, app):
@@ -214,6 +206,6 @@ def _execute(job_id, work_dir, app, produce_scores):
         shutil.rmtree(work_dir, ignore_errors=True)  # audio/original nunca se persiste
 
 
-def _run(job_id, audio_path, work_dir, user_id, title, stems, app):
+def _run(job_id, audio_path, work_dir, user_id, title, separate, app):
     _execute(job_id, work_dir, app,
-             lambda: _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, stems, app))
+             lambda: _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, separate, app))

@@ -1,30 +1,36 @@
 #!/usr/bin/env bash
-# Dependencias ML del pipeline (paso 6+). NO se instalan con un `pip install -r` normal:
-# basic-pitch 0.4.0 pinea tensorflow<2.15.1 (sin wheels para Python 3.12), así que se instala
-# --no-deps sobre el backend ONNX, que no necesita TensorFlow en runtime.
-# pretty_midi/mir_eval traen sdists cuyo build necesita setuptools moderno => --no-build-isolation.
+# Dependencias ML del pipeline (transcripción de piano). torch se instala CPU-only PRIMERO
+# (sin CUDA, no hay GPU) para que el resto lo tome ya satisfecho.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 PIP="${1:-.venv/bin/pip}"
 
 $PIP install -U setuptools wheel Cython
-$PIP install --no-build-isolation "pretty_midi==0.2.11" "mir_eval==0.8.2"
-$PIP install "librosa==0.11.0" "onnxruntime==1.27.0" "scipy" "resampy" "music21==10.5.0"
-$PIP install --no-deps "basic-pitch==0.4.0"
-
-# Demucs para separación de instrumentos. torch CPU-only (sin CUDA) porque no hay GPU dedicada.
 $PIP install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
+
+# Transcripción de piano (ByteDance, SOTA en piano solo) + music21 + librosa (tempo).
+$PIP install piano_transcription_inference "music21==10.5.0" "librosa==0.11.0" "scipy" "resampy"
+
+# Demucs para aislar el piano de una mezcla (opcional en la UI).
 $PIP install demucs
 
 # Cola de jobs
 $PIP install "rq==2.6.0"
+
+# Checkpoint del modelo de piano (~165 MB) desde Zenodo, cacheado en ~/piano_transcription_inference_data
+CKPT_DIR="$HOME/piano_transcription_inference_data"
+CKPT="$CKPT_DIR/note_F1=0.9677_pedal_F1=0.9186.pth"
+if [ ! -s "$CKPT" ]; then
+  mkdir -p "$CKPT_DIR"
+  curl -L -C - "https://zenodo.org/record/4034264/files/CRNN_note_F1%3D0.9677_pedal_F1%3D0.9186.pth?download=1" -o "$CKPT"
+fi
 
 # yt-dlp pineado. IMPORTANTE (§6.8): actualizarlo seguido — YouTube cambia el player cada
 # pocas semanas y un yt-dlp viejo se rompe ("Requested format is not available") y acumula
 # CVEs. Actualizá con:  pip install -U yt-dlp
 $PIP install "yt-dlp==2026.7.4"
 
-echo "ML deps instaladas. Inferencia: ONNX. Separación: Demucs/torch CPU."
+echo "ML deps instaladas. Transcripción: modelo de piano (ByteDance). Aislar piano: Demucs/torch CPU."
 
 # MuseScore 4 para export PDF (headless). El AppImage se extrae sin root ni FUSE.
 # Se usa MuseScore 4 (no 3.6.2) porque su AppImage incluye el plugin Qt offscreen.

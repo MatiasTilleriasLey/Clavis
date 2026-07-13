@@ -1,8 +1,8 @@
-"""Pipeline audio -> MusicXML. Función pura reutilizable: la usa el request sync (paso 6-7)
-y después el worker de la cola (paso 10). Todo ocurre dentro de un work_dir efímero.
+"""Pipeline audio de piano -> MusicXML (gran pentagrama). Lo usa el worker de la cola.
+Todo ocurre dentro de un work_dir efímero.
 
-Imports de basic-pitch/music21 son perezosos: cargar TensorFlow es lento y no debe pesar
-en el arranque del web app ni si el proceso nunca transcribe."""
+Los imports de los modelos (piano_transcription_inference/music21/librosa) son perezosos:
+cargar el checkpoint es lento y no debe pesar en el arranque del web app."""
 import os
 import subprocess
 import sys
@@ -28,11 +28,13 @@ def normalize_audio(src, dst):
     )
 
 
-def audio_to_midi(wav, midi_path):
-    from basic_pitch import ICASSP_2022_MODEL_PATH
-    from basic_pitch.inference import predict
-    _, midi_data, _ = predict(wav, ICASSP_2022_MODEL_PATH)
-    midi_data.write(midi_path)
+def audio_to_midi_piano(wav, midi_path):
+    """Transcribe piano con el modelo de ByteDance (SOTA en piano solo), muy superior a
+    basic-pitch para este caso. Corre en CPU (más lento, aceptable — sin GPU)."""
+    import librosa
+    from piano_transcription_inference import PianoTranscription, sample_rate
+    audio, _ = librosa.load(wav, sr=sample_rate, mono=True)  # el modelo espera 16 kHz
+    PianoTranscription(device="cpu").transcribe(audio, midi_path)
 
 
 def estimate_tempo(wav):
@@ -169,14 +171,14 @@ def separate_stems(audio_path, work_dir, stems):
     return result
 
 
-def transcribe(audio_path, work_dir, instrument="mezcla", title=""):
+def transcribe(audio_path, work_dir, title=""):
     """Audio validado -> path del MusicXML generado dentro de work_dir.
     El MIDI intermedio queda en work_dir/notes.mid (se persiste para descarga)."""
     wav = os.path.join(work_dir, "norm.wav")
     midi = os.path.join(work_dir, "notes.mid")
     xml = os.path.join(work_dir, "score.musicxml")
     normalize_audio(audio_path, wav)
-    audio_to_midi(wav, midi)
+    audio_to_midi_piano(wav, midi)
     bpm = estimate_tempo(wav)
-    midi_to_musicxml(midi, xml, instrument=instrument, title=title, tempo=bpm)
+    midi_to_musicxml(midi, xml, instrument="piano", title=title, tempo=bpm)  # siempre piano
     return xml

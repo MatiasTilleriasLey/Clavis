@@ -107,7 +107,7 @@ def run():
 
     # 9. Upload: auth + magic bytes (stub del pipeline; job inline).
     import app.jobs as _jobs
-    def _fake_transcribe(src, work_dir, instrument="mezcla", title=""):
+    def _fake_transcribe(src, work_dir, title=""):
         p = os.path.join(work_dir, "score.musicxml")
         open(p, "w").write("<score-partwise><part/></score-partwise>")
         return p
@@ -121,10 +121,9 @@ def run():
     _jobs.transcribe = _fake_transcribe
     _jobs.separate_stems = _fake_separate
 
-    def up(c, data, name, stems=None):
+    def up(c, data, name, extra=None):
         payload = {"audio": (BytesIO(data), name)}
-        if stems:
-            payload["stems"] = stems
+        payload.update(extra or {})
         return c.post("/upload", data=payload, content_type="multipart/form-data", follow_redirects=True)
 
     r = up(admin, b"RIFF\x24\x08\x00\x00WAVEfmt ", "song.wav")
@@ -134,11 +133,11 @@ def run():
     r = app.test_client().post("/upload", data={"audio": (BytesIO(b"RIFF...WAVE.."), "x.wav")},
                                content_type="multipart/form-data")
     assert r.status_code == 302 and "/login" in r.headers["Location"], "upload sin auth permitido"
-    # separación por instrumento => un Score por stem
-    up(admin, b"RIFF\x24\x08\x00\x00WAVEfmt ", "mix.wav", stems=["voz", "piano"])
+    # aislar piano (separate=1) => usa Demucs (stub) y transcribe; todo se guarda como piano
+    up(admin, b"RIFF\x24\x08\x00\x00WAVEfmt ", "mix.wav", extra={"separate": "1"})
     with app.app_context():
         insts = {s.instrument for s in db.session.scalars(db.select(Score).filter_by(user_id=a_id))}
-    assert {"voz", "piano"} <= insts, f"no creó un Score por instrumento; hay {insts}"
+    assert insts == {"piano"}, f"la app debería producir solo piano; hay {insts}"
 
     # 10. Ingesta por URL: allowlist en la ruta (§6.4), sin crear job.
     with app.app_context():
