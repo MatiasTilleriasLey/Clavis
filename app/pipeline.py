@@ -28,12 +28,13 @@ def normalize_audio(src, dst):
     )
 
 
-def audio_to_midi_piano(wav, midi_path, engine="local"):
+def audio_to_midi_piano(wav, midi_path, engine="local", onset_threshold=None):
     """Transcribe piano WAV -> MIDI con el motor elegido (ver app/transcribers.py). Default
     `local` (ByteDance, SOTA en piano solo). Otros motores (Transkun, etc.) son opcionales y
-    sirven para A/B de calidad — todo lo demás del pipeline es idéntico salga de donde salga."""
+    sirven para A/B de calidad — todo lo demás del pipeline es idéntico salga de donde salga.
+    `onset_threshold`: solo ByteDance; sube el umbral para reducir notas fantasma."""
     from .transcribers import run as run_transcriber
-    run_transcriber(engine, wav, midi_path)
+    run_transcriber(engine, wav, midi_path, onset_threshold)
 
 
 def estimate_tempo(wav):
@@ -271,18 +272,19 @@ def separate_stems(audio_path, work_dir, stems):
     return result
 
 
-def transcribe(audio_path, work_dir, title="", mscore_bin=None, engine="local"):
+def transcribe(audio_path, work_dir, title="", mscore_bin=None, engine="local", onset_threshold=None):
     """Audio de piano -> (musicxml, pdf). Genera la notación con MuseScore importando el MIDI
     (auto-separa manos, cuantiza y detecta armadura/tempo mucho mejor que music21).
-    `engine`: motor de transcripción (ver app/transcribers.py). Requiere MuseScore. El MIDI
-    queda en work_dir/notes.mid (se persiste para descarga)."""
+    `engine`: motor de transcripción (ver app/transcribers.py). `onset_threshold`: solo ByteDance,
+    sube el umbral para reducir notas fantasma. Requiere MuseScore. El MIDI queda en
+    work_dir/notes.mid (se persiste para descarga)."""
     wav = os.path.join(work_dir, "norm.wav")
     midi = os.path.join(work_dir, "notes.mid")
     xml = os.path.join(work_dir, "score.musicxml")
     pdf = os.path.join(work_dir, "score.pdf")
 
     normalize_audio(audio_path, wav)
-    audio_to_midi_piano(wav, midi, engine)
+    audio_to_midi_piano(wav, midi, engine, onset_threshold)
     bpm = estimate_tempo(wav)
     _consolidate_midi(midi, bpm)
 

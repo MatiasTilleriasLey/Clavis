@@ -22,17 +22,23 @@ def _transkun_bin():
     return shutil.which("transkun")
 
 
-def _bytedance(wav_path, midi_path):
-    """ByteDance `piano_transcription_inference` (SOTA en piano solo, Apache-2.0). CPU, local."""
+def _bytedance(wav_path, midi_path, onset_threshold=None):
+    """ByteDance `piano_transcription_inference` (SOTA en piano solo, Apache-2.0). CPU, local.
+    `onset_threshold`: sube el umbral de detección de onsets (default del modelo 0.3) para
+    quedarse solo con las notas más seguras y reducir notas fantasma."""
     import librosa
     from piano_transcription_inference import PianoTranscription, sample_rate
     audio, _ = librosa.load(wav_path, sr=sample_rate, mono=True)  # el modelo espera 16 kHz
-    PianoTranscription(device="cpu").transcribe(audio, midi_path)
+    pt = PianoTranscription(device="cpu")
+    if onset_threshold is not None:
+        pt.onset_threshold = float(onset_threshold)  # atributo de instancia usado en el post-proceso
+    pt.transcribe(audio, midi_path)
 
 
-def _transkun(wav_path, midi_path):
+def _transkun(wav_path, midi_path, onset_threshold=None):
     """Transkun (open source): CLI `transkun <in> <out.mid>`. Subprocess seguro (shell=False,
-    lista de argumentos, timeout). Baja su checkpoint la primera vez y lo cachea."""
+    lista de argumentos, timeout). Baja su checkpoint la primera vez y lo cachea.
+    (No usa `onset_threshold` — es propio de ByteDance.)"""
     exe = _transkun_bin()
     if not exe:
         raise RuntimeError("transkun no está instalado")
@@ -64,9 +70,9 @@ def available_engines():
             for k, v in ENGINES.items() if v["available"]()]
 
 
-def run(engine, wav_path, midi_path):
+def run(engine, wav_path, midi_path, onset_threshold=None):
     """Ejecuta el motor elegido. Si no es válido o no está disponible, cae al local."""
     e = ENGINES.get(engine)
     if e is None or not e["available"]():
         e = ENGINES[DEFAULT]
-    e["run"](wav_path, midi_path)
+    e["run"](wav_path, midi_path, onset_threshold)

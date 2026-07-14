@@ -107,7 +107,7 @@ def run():
 
     # 9. Upload: auth + magic bytes (stub del pipeline; job inline).
     import app.jobs as _jobs
-    def _fake_transcribe(src, work_dir, title="", mscore_bin=None, engine="local"):
+    def _fake_transcribe(src, work_dir, title="", mscore_bin=None, engine="local", onset_threshold=None):
         p = os.path.join(work_dir, "score.musicxml")
         open(p, "w").write("<score-partwise><part/></score-partwise>")
         return p, None

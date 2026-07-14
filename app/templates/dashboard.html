@@ -12,6 +12,17 @@
   {% endif %}
 {% endmacro %}
 
+{% macro sensitivity_select() %}
+  <label class="enginesel">Sensibilidad de detección
+    <select name="onset">
+      <option value="">Normal</option>
+      <option value="0.5">Menos notas fantasma</option>
+      <option value="0.7">Estricto (aún menos)</option>
+    </select>
+    <span class="hint" style="margin:0">Si te agrega notas que no van, subí el umbral. Aplica al motor ByteDance.</span>
+  </label>
+{% endmacro %}
+
 {% block content %}
 <div id="dash">
 
@@ -46,6 +57,7 @@
           <span class="hint" style="margin:0">Para canciones con banda completa. Más lento (separación en cascada).</span></span>
       </label>
       {{ engine_select() }}
+      {{ sensitivity_select() }}
       <button type="submit" class="btn btn--primary btn--block">Subir y transcribir</button>
     </form>
 
@@ -60,6 +72,7 @@
           <span class="hint" style="margin:0">Para canciones con banda completa. Más lento (separación en cascada).</span></span>
       </label>
       {{ engine_select() }}
+      {{ sensitivity_select() }}
       <button type="submit" class="btn btn--primary btn--block">Transcribir desde el link</button>
     </form>
 

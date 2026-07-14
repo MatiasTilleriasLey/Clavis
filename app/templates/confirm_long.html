@@ -13,6 +13,7 @@
     <input type="hidden" name="confirm" value="1">
     {% if separate %}<input type="hidden" name="separate" value="1">{% endif %}
     {% if engine %}<input type="hidden" name="engine" value="{{ engine }}">{% endif %}
+    {% if onset %}<input type="hidden" name="onset" value="{{ onset }}">{% endif %}
     <button type="submit">Sí, continuar</button>
   </form>
   <p class="links"><a href="{{ url_for('auth.dashboard') }}">Cancelar</a></p>
