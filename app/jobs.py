@@ -147,6 +147,49 @@ def cancel(job, redis_conn):
             pass  # ya terminó o no existe; igual marcamos canceled abajo
 
 
+STALE_AFTER = 3 * 3600  # backstop: un job no-terminal más viejo que esto se da por perdido
+
+
+def reap_stale(user_id, redis_conn):
+    """Reconcilia los jobs no-terminales de un usuario contra RQ. Si el worker murió sin
+    actualizar la DB (SIGKILL, reboot, Redis reiniciado), el job queda 'queued'/'started'
+    para siempre y el dashboard lo muestra como si siguiera en proceso. Acá lo marcamos
+    'failed' cuando su job de RQ ya no existe / no está vivo, o cuando es demasiado viejo,
+    y limpiamos su temp (el audio nunca se persiste, §4.5). Devuelve True si cambió algo."""
+    from datetime import datetime, timezone
+
+    from .models import Job as DBJob
+    try:
+        redis_conn.ping()
+    except Exception:
+        return False  # Redis caído: no podemos saber el estado real, no tocar nada
+    stale = (DBJob.query.filter_by(user_id=user_id)
+             .filter(DBJob.status.in_(("queued", "started"))).all())
+    now, changed = datetime.now(timezone.utc), False
+    for j in stale:
+        alive = False
+        if j.rq_id:
+            try:
+                from rq.job import Job as RQJob
+                rq_job = RQJob.fetch(j.rq_id, connection=redis_conn)
+                alive = rq_job.get_status(refresh=True) in ("queued", "started", "deferred", "scheduled")
+            except Exception:
+                alive = False  # el job de RQ ya no existe => el worker se perdió
+        ca = j.created_at
+        if ca is not None and ca.tzinfo is None:
+            ca = ca.replace(tzinfo=timezone.utc)
+        too_old = ca is not None and (now - ca).total_seconds() > STALE_AFTER
+        if not alive or too_old:
+            j.status = "failed"
+            j.error = j.error or "worker_perdido"
+            if j.work_dir:
+                shutil.rmtree(j.work_dir, ignore_errors=True)
+            changed = True
+    if changed:
+        db.session.commit()
+    return changed
+
+
 def transcribe_job(job_id, audio_path, work_dir, user_id, title, separate=False):
     """Corre en el worker (sin app context) o inline en tests (con app context)."""
     from flask import current_app, has_app_context

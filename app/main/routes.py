@@ -146,6 +146,18 @@ def job_cancel(job_id):
     return redirect(url_for("auth.dashboard"))
 
 
+@bp.post("/job/<int:job_id>/dismiss")
+@login_required
+def job_dismiss(job_id):
+    # Sacar de la lista un job ya terminado (fallido/cancelado/finalizado). Verifica ownership.
+    job = _owned_job(job_id)
+    if job.status in ("failed", "canceled", "finished"):
+        db.session.delete(job)
+        db.session.commit()
+    flash("Job descartado.")
+    return redirect(url_for("auth.dashboard"))
+
+
 @bp.get("/score/<int:score_id>")
 @login_required
 def score_view(score_id):

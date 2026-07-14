@@ -183,6 +183,29 @@ def run():
         assert db.session.get(Score, sid) is None, "la partitura no se borró"
         assert db.session.get(Job, jb_id).score_id is None, "el job no quedó desligado tras borrar la partitura"
 
+    # 11c. Reaper de jobs fantasma + descartar (con IDOR).
+    from app.jobs import reap_stale
+
+    class _FakeRedis:
+        def ping(self):
+            return True
+
+    with app.app_context():
+        zj = Job(user_id=a_id, status="queued")   # sin rq_id => worker perdido
+        db.session.add(zj)
+        db.session.commit()
+        zid = zj.id
+        reap_stale(a_id, _FakeRedis())
+        assert db.session.get(Job, zid).status == "failed", "el reaper no marcó el job zombie"
+    assert admin.post(f"/job/{zid}/dismiss").status_code == 302, "descartar job falló"
+    with app.app_context():
+        assert db.session.get(Job, zid) is None, "el job descartado sigue existiendo"
+        aj = Job(user_id=a_id, status="failed")
+        db.session.add(aj)
+        db.session.commit()
+        ajid = aj.id
+    assert beto.post(f"/job/{ajid}/dismiss").status_code == 404, "IDOR: B descartó el job de A"
+
     # 12. Admin: gate + promover. B (normal) => 403; A (admin) => 200 y puede promover a B.
     assert beto.get("/admin").status_code == 403, "un usuario normal accedió a /admin"
     assert admin.get("/admin").status_code == 200, "el admin no accede a /admin"

@@ -54,7 +54,7 @@
 
 {% if jobs %}
 <div class="card" style="margin-bottom:16px">
-  <span class="label">En proceso</span>
+  <span class="label">Trabajos</span>
   <ul id="jobs" style="list-style:none; padding:0; margin:10px 0 0">
     {% for j in jobs %}
     <li data-job="{{ j.id }}"
@@ -68,6 +68,11 @@
       <form method="post" action="{{ url_for('main.job_cancel', job_id=j.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
         <button type="submit" class="btn btn--ghost">Cancelar</button>
+      </form>
+      {% else %}
+      <form method="post" action="{{ url_for('main.job_dismiss', job_id=j.id) }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn btn--ghost">Descartar</button>
       </form>
       {% endif %}
     </li>

@@ -3,8 +3,8 @@ from functools import wraps
 
 import pyotp
 import qrcode
-from flask import (Blueprint, abort, flash, redirect, render_template, request,
-                   session, url_for)
+from flask import (Blueprint, abort, current_app, flash, redirect, render_template,
+                   request, session, url_for)
 from flask_login import (current_user, login_required, login_user,
                          logout_user)
 from qrcode.image.svg import SvgPathImage
@@ -254,6 +254,12 @@ def twofa_disable():
 @login_required
 def dashboard():
     from ..models import Job, Score
+    # Reconciliar jobs fantasma (worker muerto los deja colgados en 'queued'/'started').
+    try:
+        from ..jobs import _redis, reap_stale
+        reap_stale(current_user.id, _redis())
+    except Exception:
+        current_app.logger.warning("reap_stale falló", exc_info=True)
     # Listados filtrados server-side por el usuario de la sesión (§4.8).
     scores = (Score.query.filter_by(user_id=current_user.id)
               .order_by(Score.created_at.desc()).all())
