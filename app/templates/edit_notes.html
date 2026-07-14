@@ -10,7 +10,8 @@
   doble-click = borrar · click sobre una nota = seleccionarla (<strong>Ctrl+click</strong> suma/quita) ·
   <strong>Shift+arrastrar</strong> = seleccionar área · <strong>Ctrl+rueda</strong> = zoom (con Shift,
   vertical) · flechas mueven la selección · <strong>Mutear</strong> (M) silencia la selección ·
-  <strong>Solo</strong> (S) escucha solo la selección. Abajo: carriles de <strong>volumen</strong>
+  <strong>Solo</strong> (S) escucha solo la selección · <strong>✂ Dividir</strong> corta una nota
+  donde hagas click. Abajo: carriles de <strong>volumen</strong>
   (editable en la nota seleccionada) y de <strong>pedal</strong>. Al guardar se regenera la partitura,
   el audio y el modo piano.
 </p>
@@ -58,6 +59,7 @@
   </label>
   <button id="quantize" class="btn btn--ghost" title="Ajustar a la celda más cercana">⊹ Ajustar</button>
   <button id="brush" class="btn btn--ghost" title="Modo pincel: pintá notas arrastrando">🖌 Pincel</button>
+  <button id="split" class="btn btn--ghost" title="Modo dividir: click sobre una nota para cortarla ahí (a la grilla; con Alt, libre)">✂ Dividir</button>
   <span class="sep"></span>
   <span class="muted">Zoom</span>
   <button id="zoom-out" class="btn btn--ghost">−</button>
@@ -277,8 +279,9 @@
     if (selection.has(n)) selStyle(el, true);
     el.addEventListener('mousedown', e => startDrag(e, n, el));
     el.addEventListener('dblclick', e => { e.stopPropagation(); removeNote(n, el); });
-    el.addEventListener('mousemove', e => {          // cursor de "alargar" al acercarse al borde derecho
+    el.addEventListener('mousemove', e => {          // cursor según herramienta / cercanía al borde
       if (drag) return;
+      if (document.getElementById('split').classList.contains('on')) { el.style.cursor = 'crosshair'; return; }
       const rr = el.getBoundingClientRect();
       el.style.cursor = (e.clientX > rr.right - RESIZE_ZONE) ? 'ew-resize' : 'grab';
     });
@@ -480,6 +483,7 @@
       selBox.style.cssText = 'position:absolute;border:1px solid #f59e0b;background:rgba(245,158,11,0.12);z-index:7;pointer-events:none';
       grid.appendChild(selBox); return;
     }
+    if (document.getElementById('split').classList.contains('on')) { clearSelection(); return; }  // tijera: no agrega en vacío
     clearSelection();
     pushHistory();
     if (document.getElementById('brush').classList.contains('on')) { brushing = true; }
@@ -509,9 +513,21 @@
   });
 
   // --- mover / redimensionar / click-seleccionar ---
+  // dividir una nota en el punto del click (a la grilla; Alt = libre)
+  function splitNote(n, clientX, alt) {
+    const r = grid.getBoundingClientRect();
+    const t = snapV(alt, (clientX - r.left) / PPS);
+    if (t <= n.start + 0.02 || t >= n.end - 0.02) { statusEl.textContent = 'cortá más adentro de la nota'; return; }
+    pushHistory();
+    notes.push({ pitch: n.pitch, start: t, end: n.end, velocity: n.velocity, muted: n.muted || false });
+    n.end = t;
+    render(); dirty(); statusEl.textContent = 'nota dividida';
+  }
+
   let drag = null;
   function startDrag(e, n, el) {
     e.preventDefault(); e.stopPropagation();
+    if (document.getElementById('split').classList.contains('on')) { splitNote(n, e.clientX, e.altKey); return; }
     const r = el.getBoundingClientRect(), resize = (e.clientX > r.right - RESIZE_ZONE);
     drag = { resize, moved: false, ox: e.clientX, oy: e.clientY, n, el, ctrl: (e.ctrlKey || e.metaKey), group: null, s0: n.start, e0: n.end };
     document.body.style.userSelect = 'none';
@@ -786,7 +802,12 @@
   document.getElementById('mute').addEventListener('click', toggleMute);
   document.getElementById('solo').addEventListener('click', toggleSolo);
   document.getElementById('select-all').addEventListener('click', selectAll);
-  document.getElementById('brush').addEventListener('click', function () { this.classList.toggle('on'); });
+  document.getElementById('brush').addEventListener('click', function () {
+    this.classList.toggle('on'); if (this.classList.contains('on')) document.getElementById('split').classList.remove('on');
+  });
+  document.getElementById('split').addEventListener('click', function () {
+    this.classList.toggle('on'); if (this.classList.contains('on')) document.getElementById('brush').classList.remove('on');
+  });
   document.getElementById('zoom-in').addEventListener('click', () => zoomH(1.25, null));
   document.getElementById('zoom-out').addEventListener('click', () => zoomH(0.8, null));
   const bpmEl = document.getElementById('bpm');
