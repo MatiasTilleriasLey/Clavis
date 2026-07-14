@@ -15,6 +15,7 @@
     <span class="muted">Modo</span>
     <button id="mode-auto" class="btn btn--ghost on" data-w="0" title="Las notas avanzan solas (Synthesia)">Automático</button>
     <button id="mode-wait" class="btn btn--ghost" data-w="1" title="Espera a que toques la tecla correcta para avanzar">Esperar tecla</button>
+    <button id="snd" class="btn btn--ghost on" title="Sonido del piano de la app al tocar (apagalo si tu piano ya suena solo)">🔊 Sonido</button>
     <span class="sep"></span>
     <span class="muted">Velocidad</span>
     <button class="btn btn--ghost spd" data-s="0.5">0.5×</button>
@@ -151,7 +152,8 @@
   }
 
   // ---- modo esperar tecla (paso a paso: el playhead se queda en cada nota hasta tocarla) ----
-  function monitorNote(pitch, vel) {      // sonido de feedback al tocar
+  function monitorNote(pitch, vel) {      // sonido de feedback al tocar (si el toggle está activo)
+    if (!document.getElementById('snd').classList.contains('on')) return;   // tu piano ya suena solo
     try {
       if (!sfp) sfp = new core.SoundFontPlayer(SOUNDFONT);
       const seq = { notes: [{ pitch, startTime: 0, endTime: 0.6, velocity: vel || 80 }], totalTime: 0.7 };
@@ -336,6 +338,7 @@
   document.querySelectorAll('.spd').forEach(b => b.addEventListener('click', () => setSpeed(parseFloat(b.dataset.s))));
   document.getElementById('mode-auto').addEventListener('click', () => setMode(false));
   document.getElementById('mode-wait').addEventListener('click', () => setMode(true));
+  document.getElementById('snd').addEventListener('click', function () { this.classList.toggle('on'); });
   barEl.addEventListener('click', e => { const r = barEl.getBoundingClientRect(); seek((e.clientX - r.left) / r.width * songDur); });
   document.addEventListener('keydown', e => {
     if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
