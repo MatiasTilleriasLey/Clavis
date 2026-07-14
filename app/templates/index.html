@@ -3,11 +3,13 @@
 {% block content %}
 <canvas id="fx" aria-hidden="true"></canvas>
 <section>
-  <span class="label">Transcripción musical local</span>
-  <h1 class="hero__title">Convertí cualquier audio en una partitura editable.</h1>
+  <span class="label">Transcripción de piano local</span>
+  <h1 class="hero__title">De audio a partitura de piano, en tu red.</h1>
   <p class="hero__sub">
-    Subí un archivo o pegá un link, elegí los instrumentos, y obtené una partitura
-    interactiva en el navegador y un PDF descargable. Todo corre en tu red, sin salir afuera.
+    Subí un archivo o pegá un link, Clavis aísla el piano de la mezcla y lo transcribe a una
+    partitura editable en el navegador, con PDF y MIDI descargables. Después la corregís nota
+    por nota en un editor tipo DAW y la practicás con un modo piano estilo Synthesia. Todo corre
+    dentro de tu red, sin salir a internet.
   </p>
   <div class="hero__cta">
     <a class="btn btn--primary" href="{{ url_for('auth.register') }}">Crear cuenta</a>
@@ -19,22 +21,50 @@
   <div class="card">
     <span class="label">Ingesta</span>
     <h3>Archivo o link</h3>
-    <p>Subí MP3/WAV/M4A o pegá un enlace de YouTube, Instagram o TikTok.</p>
+    <p>Subí MP3/WAV/M4A/MP4 o pegá un enlace de YouTube, Instagram o TikTok. También podés
+       subir tu propio MIDI.</p>
   </div>
   <div class="card">
-    <span class="label">Separación</span>
-    <h3>Instrumento por instrumento</h3>
-    <p>Separá la mezcla en voz, batería, bajo, guitarra, piano y más, y elegí cuáles transcribir.</p>
+    <span class="label">Aislamiento</span>
+    <h3>Solo el piano</h3>
+    <p>Una cascada de modelos (MelBand Roformer + Demucs) quita la voz y el resto de la mezcla
+       para quedarse con el piano lo más limpio posible.</p>
+  </div>
+  <div class="card">
+    <span class="label">Transcripción</span>
+    <h3>Gran pentagrama</h3>
+    <p>Un modelo de piano de última generación pasa el audio a notas, en clave de sol y de fa,
+       con detección de tempo.</p>
   </div>
   <div class="card">
     <span class="label">Salida</span>
-    <h3>Partitura + PDF</h3>
-    <p>Render interactivo en el navegador y PDF listo para imprimir, uno por instrumento.</p>
+    <h3>Partitura, PDF y MIDI</h3>
+    <p>Render interactivo en el navegador, PDF listo para imprimir y el MIDI para abrirlo en
+       cualquier editor.</p>
+  </div>
+  <div class="card">
+    <span class="label">Editor</span>
+    <h3>Piano-roll tipo DAW</h3>
+    <p>Corregí la transcripción: agregar/mover/dividir/fusionar notas, volumen, pedal de sustain,
+       cuantizar, mutear/solo, y regenerá la partitura.</p>
+  </div>
+  <div class="card">
+    <span class="label">Práctica</span>
+    <h3>Modo piano</h3>
+    <p>Una vista estilo Synthesia con las notas cayendo sobre un teclado para aprender la canción
+       a tu ritmo.</p>
+  </div>
+  <div class="card">
+    <span class="label">Escuchar</span>
+    <h3>Sonido de piano real</h3>
+    <p>Reproducí la transcripción con un soundfont de piano para revisar cómo quedó antes de
+       imprimir.</p>
   </div>
   <div class="card">
     <span class="label">Privado</span>
     <h3>Tus partituras, tuyas</h3>
-    <p>Se guardan asociadas a tu cuenta. El audio original se descarta tras procesar.</p>
+    <p>Se guardan asociadas a tu cuenta, con cuenta protegida por 2FA opcional. El audio original
+       se descarta siempre tras procesar.</p>
   </div>
 </section>
 {% endblock %}

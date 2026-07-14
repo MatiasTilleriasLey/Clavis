@@ -46,9 +46,18 @@ para correr en **red local / VPN privada**.
   solo): detecta las notas, la **tonalidad** (aplica la armadura), y el **tempo** (♩ = BPM). La
   partitura se escribe en **gran pentagrama** (clave de sol + clave de fa).
 - **Aislar el piano** (opcional): para canciones con banda completa, separa el piano de la mezcla
-  (Demucs) antes de transcribir.
-- **Salidas**: render interactivo en el navegador (OpenSheetMusicDisplay), **reproducción del MIDI**
-  en el navegador, y descargas en **PDF**, **MusicXML** y **MIDI**.
+  con una **cascada de modelos** (MelBand Roformer quita la voz + Demucs extrae el piano) antes
+  de transcribir, priorizando calidad sobre velocidad.
+- **Salidas**: render interactivo en el navegador (OpenSheetMusicDisplay), **reproducción con
+  soundfont de piano** en el navegador, y descargas en **PDF**, **MusicXML** y **MIDI**.
+- **Editor de notas (piano-roll tipo DAW)**: corregí la transcripción sin salir del navegador —
+  agregar / mover / **dividir** / **fusionar** / redimensionar notas (a la grilla o libre), editar
+  el **volumen** (velocity) y el **pedal de sustain**, cuantizar, **mutear / solo**, transponer,
+  zoom, deshacer/rehacer. Al guardar se **regenera** la partitura, el PDF, el MIDI y el modo piano.
+- **Modo piano (estilo Synthesia)**: una vista con las notas cayendo sobre un teclado, en una
+  pestaña aparte, para aprender la canción a tu ritmo.
+- **Subí tu propio MIDI**: obtené la partitura, escuchalo con sonido de piano y usá el modo piano
+  y el editor sobre un MIDI que ya tengas.
 - **Metadata editable**: nombre de la canción (por defecto el del archivo/video), autor y arreglo.
 - **Multiusuario**: cada partitura queda asociada a su usuario. El audio/video original **se
   descarta** tras procesar — nunca se persiste.
@@ -63,25 +72,28 @@ para correr en **red local / VPN privada**.
 Landing pública (dentro de la VPN)
         │  Registro (nombre, email, contraseña)  /  Login  (+ 2FA opcional)
         ▼
-Dashboard  ──► subir archivo  ó  pegar link (YouTube/IG/TikTok)
+Dashboard  ──► subir archivo  ó  pegar link (YouTube/IG/TikTok)  ó  subir un MIDI
         │            │
         │            ├─ [link] validar dominio (allowlist) → yt-dlp descarga solo audio
         │            │         (tope duro 60 min server-side; aviso a los 15 min)
         │            ▼
         │      ffmpeg normaliza el audio
         │            │
-        │            ├─ [opción "aislar piano"] Demucs extrae el stem de piano
+        │            ├─ [opción "aislar piano"] cascada Roformer + Demucs → stem de piano
         │            ▼
-        │      modelo de piano (audio → MIDI)  →  music21 (tonalidad, tempo, gran
-        │                          pentagrama, metadata → MusicXML)  →  MuseScore (PDF)
+        │      piano_transcription_inference (audio → MIDI)  →  music21/librosa (tonalidad,
+        │            tempo, gran pentagrama, metadata)  →  MuseScore (MusicXML + PDF)
         ▼
-Partitura guardada por usuario  ──►  ver (OSMD) · reproducir (MIDI) · descargar
-        PDF/MusicXML/MIDI · editar datos    (el audio original se borra siempre)
+Partitura guardada por usuario  ──►  ver (OSMD) · reproducir (soundfont) · descargar
+        │         PDF/MusicXML/MIDI · editar datos      (el audio original se borra siempre)
+        ├──► Editor de notas (piano-roll) → corregir → guardar → regenera partitura/PDF/MIDI
+        └──► Modo piano (Synthesia) para practicar
 ```
 
-Los pasos pesados (Demucs, basic-pitch, MuseScore) corren en **background** vía Redis/RQ, con un
-único worker → como mucho un trabajo pesado a la vez (la máquina no tiene GPU dedicada). El
+Los pasos pesados (separación, transcripción, MuseScore) corren en **background** vía Redis/RQ,
+con un único worker → como mucho un trabajo pesado a la vez (la máquina no tiene GPU dedicada). El
 frontend muestra la etapa actual (descargando / separando / transcribiendo) y permite cancelar.
+Los jobs cuyo worker muere se reconcilian al abrir el dashboard (no quedan colgados "en proceso").
 
 ## Herramientas y por qué cada una
 
@@ -93,11 +105,12 @@ frontend muestra la etapa actual (descargando / separando / transcribiendo) y pe
 | Auth | **Flask-Login**, **argon2-cffi**, **Flask-WTF**, **Flask-Limiter**, **pyotp** | Sesiones, hashing Argon2id, CSRF, rate limiting, TOTP/2FA |
 | Descarga por link | **yt-dlp** | Extrae el audio de YouTube/IG/TikTok (con allowlist de dominios) |
 | Audio | **ffmpeg** | Normalización a WAV mono |
-| Aislar piano | **Demucs** (`htdemucs_6s`, PyTorch, CPU) | Separa el piano de una mezcla (opcional) |
+| Aislar piano | **MelBand Roformer** (audio-separator) + **Demucs** (`htdemucs_6s`), CPU | Cascada que quita la voz y extrae el piano de una mezcla (opcional) |
 | Audio → MIDI | **piano_transcription_inference** (ByteDance, PyTorch) | Transcripción de piano SOTA |
-| MIDI → partitura | **music21** + **librosa** | Tonalidad, tempo, gran pentagrama, metadata → MusicXML |
-| Partitura → PDF | **MuseScore 4 CLI** (headless) | Export a PDF |
-| Render / audio en navegador | **OpenSheetMusicDisplay** + **html-midi-player** (self-hosteados) | Partitura interactiva y reproducción |
+| MIDI → partitura | **music21** + **librosa** + **pretty_midi** | Tonalidad, tempo, gran pentagrama, edición de notas/pedal → MusicXML |
+| Partitura → PDF | **MuseScore 4 CLI** (headless) | Import de MIDI y export a MusicXML/PDF (incluye notación de pedal) |
+| Editor de notas | Piano-roll propio (Canvas/DOM, sin dependencias) | Corrección tipo DAW: notas, volumen, pedal, dividir/fusionar, cuantizar, mutear/solo |
+| Render / audio en navegador | **OpenSheetMusicDisplay** + **html-midi-player** + soundfont de piano (self-hosteados) | Partitura interactiva, modo piano y reproducción realista |
 | Email | **smtplib** (config SMTP por admin) | Notificación de job listo y reseteo de contraseña |
 
 > Todas las dependencias son open source. Licencias principales: yt-dlp (Unlicense),
@@ -138,9 +151,9 @@ docker compose up -d
 python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
-# 3) Dependencias ML pesadas: basic-pitch (ONNX), Demucs (torch CPU), MuseScore 4, yt-dlp
-#    (basic-pitch se instala de forma especial por un pin de TensorFlow roto en 3.12; el
-#     script se encarga de todo y baja/extrae MuseScore sin necesidad de root)
+# 3) Dependencias ML pesadas: torch (CPU), piano_transcription_inference + su checkpoint,
+#    Demucs y audio-separator (modelo MelBand Roformer) para aislar el piano, yt-dlp,
+#    MuseScore 4 y el soundfont de piano. El script baja/extrae todo sin necesidad de root.
 scripts/install_ml.sh
 #    Copiá el MSCORE_BIN que imprime al final a tu archivo .env
 
@@ -174,12 +187,16 @@ Clavis corre en **dos procesos**: el servidor web y el worker de transcripción.
 1. Entrá a la landing y **registrate** (nombre, email, contraseña). El **primer usuario que se
    registra queda como administrador**.
 2. **Iniciá sesión.** Si activaste 2FA, se te pedirá el código de tu app de autenticación.
-3. En el **dashboard**, subí un archivo o pegá un link. Si es una canción con banda completa,
-   marcá **"Aislar el piano de la mezcla"**.
+3. En el **dashboard**, subí un archivo, pegá un link o subí un MIDI. Si es una canción con banda
+   completa, marcá **"Aislar el piano de la mezcla"**.
 4. Seguí el **progreso** del trabajo en vivo. Al terminar, se abre la partitura.
-5. **Vela** en el navegador y **descargala** en PDF, MusicXML o MIDI. Podés **editar** el nombre,
-   autor y arreglo.
-6. En **Perfil** podés cambiar tu email o contraseña y activar/desactivar 2FA.
+5. **Vela** en el navegador, **escuchala** con sonido de piano y **descargala** en PDF, MusicXML o
+   MIDI. Podés **editar** el nombre, autor y arreglo.
+6. Si la transcripción tiene errores, abrí el **editor de notas** (piano-roll) para corregirlos:
+   mover/dividir/fusionar notas, ajustar volumen y pedal, cuantizar, mutear/solo. Al guardar se
+   regenera todo.
+7. Practicá con el **modo piano** (estilo Synthesia), que se abre en una pestaña aparte.
+8. En **Perfil** podés cambiar tu email o contraseña y activar/desactivar 2FA.
 
 ## Administración
 
