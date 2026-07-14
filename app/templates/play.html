@@ -1,30 +1,266 @@
 {% extends "base.html" %}
 {% block title %}{{ score.title }} — Piano · Clavis{% endblock %}
 {% block content %}
-<span class="label">Modo piano (tutorial)</span>
-<h1 class="hero__title" style="font-size:28px">{{ score.title }}</h1>
-<p class="muted" style="font-size:13px">
-  Dale play: las notas caen sobre el teclado marcando qué tecla tocar, sincronizadas con el audio.
+<span class="label">Modo piano</span>
+<h1 class="hero__title" style="font-size:26px">{{ score.title }}</h1>
+<p class="muted" style="font-size:13px; margin:4px 0 12px">
+  Las notas caen sobre el teclado marcando qué tecla tocar. Bajá la velocidad para aprender a tu ritmo.
 </p>
 
-<div class="card" style="padding:12px">
-  <midi-player src="{{ url_for('main.score_midi', score_id=score.id) }}"
-               sound-font="{{ url_for('static', filename='soundfont') }}"
-               visualizer="#vis" style="width:100%; display:block"></midi-player>
-</div>
-
-<div style="background:#0b0d10; border:1px solid var(--border); border-radius:8px; margin-top:12px;
-            height:60vh; overflow:hidden">
-  <midi-visualizer type="waterfall" id="vis"
-                   src="{{ url_for('main.score_midi', score_id=score.id) }}"
-                   style="width:100%; height:100%"></midi-visualizer>
+<div id="stage">
+  <div id="ctl">
+    <button id="play" class="btn btn--primary">▶ Reproducir</button>
+    <button id="restart" class="btn btn--ghost" title="Desde el inicio">⏮</button>
+    <span class="sep"></span>
+    <span class="muted">Velocidad</span>
+    <button class="btn btn--ghost spd" data-s="0.5">0.5×</button>
+    <button class="btn btn--ghost spd" data-s="0.75">0.75×</button>
+    <button class="btn btn--ghost spd on" data-s="1">1×</button>
+    <span class="sep"></span>
+    <div id="bar" title="Click para saltar"><div id="fill"></div></div>
+    <span id="time" class="muted">0:00 / 0:00</span>
+    <button id="fs" class="btn btn--ghost" title="Pantalla completa">⛶</button>
+  </div>
+  <div id="wrap"><canvas id="c"></canvas></div>
 </div>
 
 <p class="links" style="margin-top:12px">
   <a href="{{ url_for('main.score_view', score_id=score.id) }}">← Ver la partitura</a>
 </p>
+
+<style>
+  #stage { border:1px solid var(--border); border-radius:12px; background:var(--surface);
+    padding:12px; box-shadow:0 10px 30px -12px rgba(0,0,0,.6); }
+  #ctl { display:flex; gap:8px; align-items:center; flex-wrap:wrap; margin-bottom:10px;
+    background:linear-gradient(180deg,#191d23,#131619); border:1px solid var(--border);
+    border-radius:10px; padding:8px 10px; }
+  #ctl .btn { padding:6px 12px; font-size:13px; font-weight:500; border-radius:7px; }
+  #ctl .btn--ghost { background:#20242b; border-color:#2c313a; color:#e5e7eb; }
+  #ctl .btn--ghost:hover { border-color:var(--primary); }
+  #ctl .btn.on { background:var(--primary); color:#06201c; border-color:var(--primary); }
+  #ctl .muted { font-size:11px; text-transform:uppercase; letter-spacing:.08em; font-family:var(--font-mono); }
+  #ctl .sep { width:1px; height:20px; background:var(--border); margin:0 3px; }
+  #bar { flex:1; min-width:120px; height:8px; background:#0b0d10; border:1px solid #2c313a;
+    border-radius:6px; overflow:hidden; cursor:pointer; }
+  #fill { height:100%; width:0; background:linear-gradient(90deg,#5eead4,#14b8a6); }
+  #time { font-family:var(--font-mono); font-size:12px; color:var(--primary); white-space:nowrap; }
+  #wrap { height:64vh; border-radius:10px; overflow:hidden; background:#07090b;
+    box-shadow:inset 0 2px 16px -6px #000; }
+  #c { display:block; }
+  #stage:fullscreen { border-radius:0; }
+  #stage:fullscreen #wrap { height:calc(100vh - 66px); }
+</style>
 {% endblock %}
 
 {% block scripts %}
 <script src="{{ url_for('static', filename='js/midi-player.min.js') }}"></script>
+<script>
+(function () {
+  const scoreId = {{ score.id }};
+  const SOUNDFONT = {{ url_for('static', filename='soundfont') | tojson }};
+  const canvas = document.getElementById('c'), ctx = canvas.getContext('2d');
+  const wrap = document.getElementById('wrap'), stage = document.getElementById('stage');
+  const playBtn = document.getElementById('play'), fillEl = document.getElementById('fill');
+  const timeEl = document.getElementById('time'), barEl = document.getElementById('bar');
+
+  const WHITE_PC = { 0:1, 2:1, 4:1, 5:1, 7:1, 9:1, 11:1 };
+  const LEAD = 3.2;                       // segundos de "canción" visibles cayendo
+  const R = { a: '#5eead4', b: '#14b8a6', g: 'rgba(45,212,191,.55)' };   // mano derecha (teal)
+  const L = { a: '#a5b4fc', b: '#6366f1', g: 'rgba(129,140,248,.55)' };  // mano izquierda (indigo)
+  const hand = p => (p < 60 ? L : R);
+
+  let notes = [], tempo = 120, songDur = 0, lo = 48, hi = 84;
+  let cssW = 0, cssH = 0, KB_H = 96, keyTop = 0, pxs = 200;
+  const layout = {};                      // pitch -> {x, w, black}
+
+  // ---- reproducción con soundfont, con velocidad ajustable y reloj continuo ----
+  let sfp = null, playing = false, raf = 0, speed = 1;
+  let songT = 0, wall0 = 0;               // songT en "segundos de canción"; el reloj corre a *speed
+  const nowT = () => playing ? songT + (performance.now() / 1000 - wall0) * speed : songT;
+
+  function seqFrom(fromT) {               // notas desde fromT, en segundos reales (escaladas por 1/speed)
+    const ns = []; let maxEnd = 0;
+    for (const n of notes) {
+      if (n.end <= fromT + 0.001) continue;
+      const e = (n.end - fromT) / speed;
+      ns.push({ pitch: n.pitch, startTime: Math.max(0, (n.start - fromT) / speed), endTime: e, velocity: n.velocity || 80 });
+      if (e > maxEnd) maxEnd = e;
+    }
+    return { notes: ns, totalTime: maxEnd + 0.5 };
+  }
+  function stopAudio() { if (sfp) { try { sfp.stop(); } catch (e) {} } cancelAnimationFrame(raf); playing = false; setBtn(); }
+  function pause() { if (!playing) return; songT = Math.min(nowT(), songDur); stopAudio(); }
+  function play() {
+    if (playing) { pause(); return; }
+    if (!notes.length) return;
+    if (songT >= songDur) songT = 0;
+    const seq = seqFrom(songT);
+    if (!seq.notes.length) return;
+    if (!sfp) sfp = new core.SoundFontPlayer(SOUNDFONT);
+    playBtn.disabled = true; playBtn.textContent = '… cargando';
+    sfp.loadSamples(seq).then(() => {
+      playBtn.disabled = false; playing = true; wall0 = performance.now() / 1000;
+      try { sfp.start(seq); } catch (e) {}
+      setBtn(); loop();
+    }).catch(() => { playBtn.disabled = false; playBtn.textContent = '▶ Reproducir'; });
+  }
+  function seek(t) { const was = playing; if (playing) stopAudio(); songT = Math.max(0, Math.min(t, songDur)); draw(songT); if (was) play(); }
+  function setSpeed(s) {
+    const t = nowT(), was = playing; if (playing) stopAudio();
+    speed = s; songT = t;
+    document.querySelectorAll('.spd').forEach(b => b.classList.toggle('on', parseFloat(b.dataset.s) === s));
+    draw(songT); if (was) play();
+  }
+  function setBtn() { playBtn.textContent = playing ? '⏸ Pausar' : '▶ Reproducir'; }
+  function fmt(s) { s = Math.max(0, s | 0); return (s / 60 | 0) + ':' + String(s % 60).padStart(2, '0'); }
+
+  function loop() {
+    if (!playing) return;
+    const t = nowT();
+    if (t >= songDur + 0.3) { stopAudio(); songT = 0; draw(0); return; }
+    draw(t);
+    raf = requestAnimationFrame(loop);
+  }
+
+  // ---- geometría del teclado ----
+  function buildGeom() {
+    let whites = 0;
+    for (let p = lo; p <= hi; p++) if (WHITE_PC[p % 12]) whites++;
+    const ww = cssW / Math.max(1, whites), bw = ww * 0.62;
+    let wi = 0;
+    for (let p = lo; p <= hi; p++) {
+      if (WHITE_PC[p % 12]) { layout[p] = { x: wi * ww, w: ww, black: false }; wi++; }
+      else layout[p] = { x: wi * ww - bw / 2, w: bw, black: true };
+    }
+  }
+  function resize() {
+    const dpr = Math.min(window.devicePixelRatio || 1, 2);
+    cssW = wrap.clientWidth; cssH = wrap.clientHeight;
+    canvas.width = Math.floor(cssW * dpr); canvas.height = Math.floor(cssH * dpr);
+    canvas.style.width = cssW + 'px'; canvas.style.height = cssH + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    KB_H = Math.min(130, Math.max(74, cssH * 0.17));
+    keyTop = cssH - KB_H; pxs = keyTop / LEAD;
+    buildGeom(); draw(nowT());
+  }
+
+  // ---- dibujo ----
+  function rrect(x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2); if (r < 0) r = 0;
+    ctx.beginPath();
+    ctx.moveTo(x + r, y); ctx.arcTo(x + w, y, x + w, y + h, r); ctx.arcTo(x + w, y + h, x, y + h, r);
+    ctx.arcTo(x, y + h, x, y, r); ctx.arcTo(x, y, x + w, y, r); ctx.closePath();
+  }
+  function draw(t) {
+    if (t === undefined) t = nowT();
+    ctx.clearRect(0, 0, cssW, cssH);
+    // fondo
+    ctx.fillStyle = '#07090b'; ctx.fillRect(0, 0, cssW, cssH);
+
+    // líneas de tiempo (compás/beat) que suben — dan sensación de movimiento fluido
+    const beat = 60 / tempo;
+    for (let b = Math.floor(t / beat); (b * beat - t) < LEAD; b++) {
+      const y = keyTop - (b * beat - t) * pxs;
+      if (y < 0 || y > keyTop) continue;
+      ctx.strokeStyle = (b % 4 === 0) ? 'rgba(255,255,255,.09)' : 'rgba(255,255,255,.035)';
+      ctx.lineWidth = 1; ctx.beginPath(); ctx.moveTo(0, y + 0.5); ctx.lineTo(cssW, y + 0.5); ctx.stroke();
+    }
+    // separadores de octava (columnas de Do) sutiles
+    for (let p = lo; p <= hi; p++) if (p % 12 === 0 && layout[p]) {
+      ctx.strokeStyle = 'rgba(255,255,255,.05)'; ctx.lineWidth = 1;
+      ctx.beginPath(); ctx.moveTo(layout[p].x + 0.5, 0); ctx.lineTo(layout[p].x + 0.5, keyTop); ctx.stroke();
+    }
+
+    // notas cayendo (+ recolectar teclas activas)
+    const active = {};
+    ctx.save();
+    ctx.beginPath(); ctx.rect(0, 0, cssW, keyTop); ctx.clip();   // no pintar sobre el teclado
+    for (const n of notes) {
+      const yb = keyTop - (n.start - t) * pxs, yt = keyTop - (n.end - t) * pxs;
+      if (yb < -2 || yt > keyTop) continue;
+      const k = layout[n.pitch]; if (!k) continue;
+      if (n.start <= t && t <= n.end) active[n.pitch] = 1;
+      const c = hand(n.pitch), pad = k.black ? 1.5 : 2;
+      const x = k.x + pad, w = k.w - pad * 2, h = Math.max(6, yb - yt);
+      const grd = ctx.createLinearGradient(0, yt, 0, yb);
+      grd.addColorStop(0, c.a); grd.addColorStop(1, c.b);
+      rrect(x, yt, w, h, 4);
+      ctx.fillStyle = grd; ctx.shadowColor = c.g; ctx.shadowBlur = 12; ctx.fill(); ctx.shadowBlur = 0;
+      ctx.strokeStyle = 'rgba(255,255,255,.28)'; ctx.lineWidth = 1; ctx.stroke();
+      // brillo superior
+      ctx.fillStyle = 'rgba(255,255,255,.35)'; rrect(x, yt, w, Math.min(3, h), 2); ctx.fill();
+    }
+    ctx.restore();
+
+    drawKeyboard(active);
+    // línea de impacto con glow
+    const hl = ctx.createLinearGradient(0, keyTop - 18, 0, keyTop);
+    hl.addColorStop(0, 'rgba(45,212,191,0)'); hl.addColorStop(1, 'rgba(45,212,191,.18)');
+    ctx.fillStyle = hl; ctx.fillRect(0, keyTop - 18, cssW, 18);
+    ctx.strokeStyle = 'rgba(45,212,191,.6)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(0, keyTop); ctx.lineTo(cssW, keyTop); ctx.stroke();
+
+    // progreso / tiempo
+    fillEl.style.width = (songDur ? Math.min(100, t / songDur * 100) : 0) + '%';
+    timeEl.textContent = fmt(t) + ' / ' + fmt(songDur);
+  }
+
+  function drawKeyboard(active) {
+    const bh = KB_H * 0.62;
+    // blancas
+    for (let p = lo; p <= hi; p++) {
+      const k = layout[p]; if (!k || k.black) continue;
+      const on = active[p], c = hand(p);
+      const g = ctx.createLinearGradient(0, keyTop, 0, cssH);
+      if (on) { g.addColorStop(0, c.a); g.addColorStop(1, c.b); }
+      else { g.addColorStop(0, '#f4f5f7'); g.addColorStop(1, '#cfd3da'); }
+      ctx.fillStyle = g; ctx.fillRect(k.x, keyTop, k.w, KB_H);
+      ctx.strokeStyle = '#0b0d10'; ctx.lineWidth = 1; ctx.strokeRect(k.x + 0.5, keyTop + 0.5, k.w - 1, KB_H - 1);
+      if (on) { ctx.fillStyle = c.g; ctx.fillRect(k.x, keyTop, k.w, 6); }
+      if (p % 12 === 0) { ctx.fillStyle = on ? '#06201c' : '#8b929c';
+        ctx.font = '9px ' + getComputedStyle(document.body).fontFamily;
+        ctx.textAlign = 'center'; ctx.fillText('C' + (p / 12 - 1), k.x + k.w / 2, cssH - 5); }
+    }
+    // negras (encima)
+    for (let p = lo; p <= hi; p++) {
+      const k = layout[p]; if (!k || !k.black) continue;
+      const on = active[p], c = hand(p);
+      const g = ctx.createLinearGradient(0, keyTop, 0, keyTop + bh);
+      if (on) { g.addColorStop(0, c.a); g.addColorStop(1, c.b); }
+      else { g.addColorStop(0, '#2a2f37'); g.addColorStop(1, '#0d0f12'); }
+      rrect(k.x, keyTop, k.w, bh, 3); ctx.fillStyle = g; ctx.fill();
+      ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.stroke();
+      if (on) { ctx.fillStyle = 'rgba(255,255,255,.5)'; rrect(k.x, keyTop, k.w, 4, 2); ctx.fill(); }
+    }
+  }
+
+  // ---- controles ----
+  playBtn.addEventListener('click', play);
+  document.getElementById('restart').addEventListener('click', () => seek(0));
+  document.querySelectorAll('.spd').forEach(b => b.addEventListener('click', () => setSpeed(parseFloat(b.dataset.s))));
+  barEl.addEventListener('click', e => { const r = barEl.getBoundingClientRect(); seek((e.clientX - r.left) / r.width * songDur); });
+  document.addEventListener('keydown', e => {
+    if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
+    if (e.code === 'Space') { e.preventDefault(); play(); }
+  });
+  const fsBtn = document.getElementById('fs');
+  fsBtn.addEventListener('click', () => { if (document.fullscreenElement) document.exitFullscreen(); else stage.requestFullscreen().catch(() => {}); });
+  document.addEventListener('fullscreenchange', () => setTimeout(resize, 60));
+  let rt; window.addEventListener('resize', () => { clearTimeout(rt); rt = setTimeout(resize, 150); });
+
+  // ---- carga ----
+  fetch('/score/' + scoreId + '/notes', { headers: { 'Accept': 'application/json' } })
+    .then(r => r.json()).then(d => {
+      tempo = d.tempo || 120; notes = d.notes || [];
+      songDur = notes.reduce((m, n) => Math.max(m, n.end), 0);
+      if (notes.length) {
+        let mn = 127, mx = 0; for (const n of notes) { if (n.pitch < mn) mn = n.pitch; if (n.pitch > mx) mx = n.pitch; }
+        lo = Math.max(21, Math.floor(mn / 12) * 12);        // arrancar en un Do para un teclado prolijo
+        hi = Math.min(108, Math.ceil((mx + 1) / 12) * 12 - 1);
+        if (hi - lo < 24) hi = Math.min(108, lo + 24);      // mínimo 2 octavas
+      }
+      resize();
+    }).catch(() => { resize(); });
+})();
+</script>
 {% endblock %}
