@@ -40,6 +40,7 @@
     <button class="tab active" data-tab="audio">🎵 Audio</button>
     <button class="tab" data-tab="link">🔗 Link</button>
     <button class="tab" data-tab="midi">🎹 MIDI</button>
+    <button class="tab" data-tab="record">🎙 Grabar</button>
   </div>
   <div class="panes">
 
@@ -86,6 +87,13 @@
       </label>
       <button type="submit" class="btn btn--primary btn--block">Generar desde MIDI</button>
     </form>
+
+    <div class="pane" id="pane-record">
+      <h3>Grabar tu teclado MIDI</h3>
+      <p class="hint">Conectá un teclado MIDI, tocá con metrónomo y generamos la partitura de lo que
+        toques. Necesitás Chrome o Edge (Web MIDI).</p>
+      <a class="btn btn--primary btn--block" href="{{ url_for('main.record') }}">🎙 Abrir grabador</a>
+    </div>
 
   </div>
 </section>

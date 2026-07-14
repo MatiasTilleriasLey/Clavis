@@ -1,0 +1,256 @@
+{% extends "base.html" %}
+{% block title %}Grabar teclado MIDI — Clavis{% endblock %}
+{% block content %}
+<meta name="csrf-token" content="{{ csrf_token() }}">
+<span class="label">Grabar teclado MIDI</span>
+<h1 class="hero__title" style="font-size:26px">Tocá y generá la partitura</h1>
+<p class="muted" style="font-size:13px; margin:4px 0 12px">
+  Conectá tu teclado MIDI, activá el metrónomo y tocá al ritmo del clic (así la partitura cuantiza
+  bien). Al terminar, generamos la partitura de lo que tocaste.
+</p>
+
+<div id="rec">
+  <div id="nomidi" class="panel" style="display:none">
+    <div class="empty"><div class="empty__ico">🎹</div>
+      <p>Tu navegador no soporta <strong>Web MIDI</strong>.</p>
+      <p class="muted">Usá Chrome o Edge (de escritorio) y accedé por HTTPS. Firefox/Safari no lo soportan.</p>
+    </div>
+  </div>
+
+  <div id="ui" style="display:none">
+    <div class="tb">
+      <button id="rec-btn" class="btn btn--primary">● Grabar</button>
+      <span class="sep"></span>
+      <label class="muted">Teclado
+        <select id="device"></select>
+      </label>
+      <label class="muted">BPM
+        <input id="bpm" type="number" min="20" max="400" value="100" style="width:64px">
+      </label>
+      <button id="metro" class="btn btn--ghost on" title="Metrónomo">🎵 Metrónomo</button>
+      <button id="monitor" class="btn btn--ghost on" title="Escuchar lo que tocás (soundfont)">🔊 Escuchar</button>
+      <span class="sep"></span>
+      <span id="status" class="muted"></span>
+    </div>
+
+    <div id="kbwrap"><div id="kb"></div></div>
+
+    <div id="after" class="panel panel--pad" style="display:none; margin-top:12px">
+      <label class="field" style="max-width:420px">
+        <span class="muted" style="font-size:13px">Nombre de la partitura</span>
+        <input id="title" type="text" maxlength="200" placeholder="Grabación de teclado">
+      </label>
+      <p id="summary" class="muted" style="font-size:13px"></p>
+      <div style="display:flex; gap:8px; flex-wrap:wrap">
+        <button id="generate" class="btn btn--primary">Generar partitura</button>
+        <button id="discard" class="btn btn--ghost">Descartar y regrabar</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<p class="links" style="margin-top:12px"><a href="{{ url_for('auth.dashboard') }}">← Dashboard</a></p>
+
+<style>
+  #rec { --rk-white:#f4f5f7; }
+  #rec .tb { display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+    background:linear-gradient(180deg,#191d23,#131619); border:1px solid var(--border);
+    border-radius:10px; padding:8px 10px; }
+  #rec .tb .muted { font-size:11px; text-transform:uppercase; letter-spacing:.08em; font-family:var(--font-mono); }
+  #rec .tb .sep { width:1px; height:20px; background:var(--border); margin:0 3px; }
+  #rec .btn { padding:6px 12px; font-size:13px; font-weight:500; border-radius:7px; }
+  #rec .btn--ghost { background:#20242b; border-color:#2c313a; color:#e5e7eb; }
+  #rec .btn--ghost:hover { border-color:var(--primary); }
+  #rec .btn.on { background:var(--primary); color:#06201c; border-color:var(--primary); }
+  #rec .btn--rec { background:#dc2626; border-color:#dc2626; color:#fff;
+    box-shadow:0 0 0 1px #dc2626, 0 0 12px -2px #dc2626; }
+  #rec select, #rec input[type=number], #rec input[type=text] {
+    background:#0f1216; border:1px solid #2c313a; color:#e5e7eb; border-radius:7px;
+    padding:5px 8px; font:inherit; font-size:13px; }
+  #rec #status { font-family:var(--font-mono); font-size:12px; color:var(--primary); }
+  #kbwrap { margin-top:10px; border:1px solid var(--border); border-radius:10px; overflow:hidden;
+    background:#07090b; box-shadow:inset 0 2px 12px -6px #000; }
+  #kb { position:relative; height:150px; white-space:nowrap; }
+  .wk { position:absolute; bottom:0; top:0; background:linear-gradient(180deg,#f4f5f7,#cfd3da);
+    border:1px solid #0b0d10; box-sizing:border-box; border-radius:0 0 3px 3px; }
+  .wk.on { background:linear-gradient(180deg,#5eead4,#14b8a6); }
+  .bk { position:absolute; top:0; height:62%; background:linear-gradient(180deg,#2a2f37,#0d0f12);
+    border:1px solid #000; box-sizing:border-box; border-radius:0 0 3px 3px; z-index:2; }
+  .bk.on { background:linear-gradient(180deg,#5eead4,#14b8a6); }
+  #rec .panel { background:var(--surface); border:1px solid var(--border); border-radius:14px; }
+  #rec .panel--pad { padding:20px 22px; }
+  #rec .field input { display:block; margin-top:6px; width:100%; }
+  #rec .empty { text-align:center; padding:40px 24px; }
+  #rec .empty__ico { font-size:44px; margin-bottom:8px; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script src="{{ url_for('static', filename='js/midi-player.min.js') }}"></script>
+<script>
+(function () {
+  const SOUNDFONT = {{ url_for('static', filename='soundfont') | tojson }};
+  const LO = 36, HI = 96;                        // C2..C7 en el teclado visual
+  const WHITE = { 0:1, 2:1, 4:1, 5:1, 7:1, 9:1, 11:1 };
+  const kb = document.getElementById('kb'), statusEl = document.getElementById('status');
+  const recBtn = document.getElementById('rec-btn');
+  const keyEls = {};
+
+  // --- teclado visual ---
+  function buildKeyboard() {
+    kb.innerHTML = '';
+    let whites = 0; for (let p = LO; p <= HI; p++) if (WHITE[p % 12]) whites++;
+    const ww = 100 / whites;                      // % del ancho por tecla blanca
+    let wi = 0;
+    for (let p = LO; p <= HI; p++) {
+      const white = WHITE[p % 12];
+      const el = document.createElement('div');
+      if (white) {
+        el.className = 'wk';
+        el.style.left = (wi * ww) + '%'; el.style.width = ww + '%';
+        wi++;
+      } else {
+        el.className = 'bk';
+        el.style.left = 'calc(' + (wi * ww) + '% - ' + (ww * 0.3) + '%)';
+        el.style.width = (ww * 0.6) + '%';
+      }
+      kb.appendChild(el); keyEls[p] = el;
+    }
+  }
+  function lightKey(pitch, on) { const el = keyEls[pitch]; if (el) el.classList.toggle('on', on); }
+
+  // --- audio: metrónomo (WebAudio) + monitoreo (soundfont) ---
+  let actx = null, sfp = null;
+  function blip(freq) {
+    try {
+      if (!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = actx.createOscillator(), g = actx.createGain();
+      o.frequency.value = freq; o.connect(g); g.connect(actx.destination);
+      g.gain.setValueAtTime(0.0001, actx.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.3, actx.currentTime + 0.004);
+      g.gain.exponentialRampToValueAtTime(0.0001, actx.currentTime + 0.08);
+      o.start(); o.stop(actx.currentTime + 0.09);
+    } catch (e) {}
+  }
+  function monitor(pitch, vel) {
+    if (!document.getElementById('monitor').classList.contains('on')) return;
+    try {
+      if (!sfp) sfp = new core.SoundFontPlayer(SOUNDFONT);
+      const seq = { notes: [{ pitch, startTime: 0, endTime: 0.6, velocity: vel || 80 }], totalTime: 0.7 };
+      sfp.loadSamples(seq).then(() => { try { sfp.start(seq); } catch (e) {} });
+    } catch (e) {}
+  }
+
+  let metroTimer = 0, beat = 0;
+  const bpm = () => Math.max(20, Math.min(400, parseInt(document.getElementById('bpm').value, 10) || 100));
+  function startMetro() {
+    stopMetro(); beat = 0;
+    const step = () => { blip(beat % 4 === 0 ? 1400 : 900); beat++; };
+    step(); metroTimer = setInterval(step, 60000 / bpm());
+  }
+  function stopMetro() { if (metroTimer) { clearInterval(metroTimer); metroTimer = 0; } }
+
+  // --- captura MIDI ---
+  let recording = false, notes = [], active = {}, t0 = 0;
+  const MAX_NOTES = 20000, MAX_SECONDS = 900;
+
+  function noteOn(pitch, vel, ts) {
+    lightKey(pitch, true); monitor(pitch, vel);
+    if (recording) active[pitch] = { t: ts, vel };
+  }
+  function noteOff(pitch, ts) {
+    lightKey(pitch, false);
+    if (recording && active[pitch]) {
+      const a = active[pitch]; delete active[pitch];
+      const start = (a.t - t0) / 1000, end = (ts - t0) / 1000;
+      if (end > start && notes.length < MAX_NOTES) notes.push({ pitch, start, end, velocity: a.vel });
+    }
+  }
+  function onMsg(e) {
+    const cmd = e.data[0] & 0xf0, d1 = e.data[1], d2 = e.data[2];
+    const ts = (e.timeStamp || performance.now());
+    if (cmd === 0x90 && d2 > 0) noteOn(d1, d2, ts);
+    else if (cmd === 0x80 || (cmd === 0x90 && d2 === 0)) noteOff(d1, ts);
+  }
+
+  // --- grabar / detener ---
+  function startRecording() {
+    notes = []; active = {}; t0 = performance.now(); recording = true;
+    recBtn.textContent = '■ Detener'; recBtn.classList.remove('btn--primary'); recBtn.classList.add('btn--rec');
+    document.getElementById('after').style.display = 'none';
+    if (document.getElementById('metro').classList.contains('on')) startMetro();
+    statusEl.textContent = 'grabando…';
+  }
+  function stopRecording() {
+    const stopT = performance.now();
+    Object.keys(active).forEach(p => noteOff(+p, stopT));   // cerrar notas colgadas
+    recording = false; stopMetro();
+    recBtn.textContent = '● Grabar'; recBtn.classList.add('btn--primary'); recBtn.classList.remove('btn--rec');
+    // recortar el silencio inicial (que la 1ª nota arranque en 0)
+    if (notes.length) {
+      const off = Math.min(...notes.map(n => n.start));
+      notes.forEach(n => { n.start = Math.max(0, n.start - off); n.end = Math.max(n.end - off, n.start + 0.03); });
+    }
+    const dur = notes.length ? Math.max(...notes.map(n => n.end)) : 0;
+    if (!notes.length) { statusEl.textContent = 'no se grabó ninguna nota'; return; }
+    statusEl.textContent = notes.length + ' notas · ' + dur.toFixed(1) + 's';
+    document.getElementById('summary').textContent =
+      'Grabaste ' + notes.length + ' notas (' + dur.toFixed(1) + ' s). Podés generar la partitura o regrabar.';
+    document.getElementById('after').style.display = 'block';
+  }
+  recBtn.addEventListener('click', () => { recording ? stopRecording() : startRecording(); });
+  document.getElementById('metro').addEventListener('click', function () {
+    this.classList.toggle('on');
+    if (recording) { this.classList.contains('on') ? startMetro() : stopMetro(); }
+  });
+  document.getElementById('monitor').addEventListener('click', function () { this.classList.toggle('on'); });
+  document.getElementById('discard').addEventListener('click', () => {
+    notes = []; document.getElementById('after').style.display = 'none'; statusEl.textContent = '';
+  });
+
+  // --- generar partitura ---
+  document.getElementById('generate').addEventListener('click', function () {
+    if (!notes.length) return;
+    const btn = this; btn.disabled = true; btn.textContent = 'generando…';
+    fetch('/record', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-CSRFToken': document.querySelector('meta[name=csrf-token]').content },
+      body: JSON.stringify({
+        title: document.getElementById('title').value,
+        tempo: bpm(),
+        notes: notes.map(n => ({ pitch: n.pitch, start: +n.start.toFixed(4), end: +n.end.toFixed(4), velocity: n.velocity }))
+      })
+    }).then(r => r.json()).then(d => {
+      if (d.ok) location.href = '/job/' + d.job_id;
+      else { statusEl.textContent = 'error al generar'; btn.disabled = false; btn.textContent = 'Generar partitura'; }
+    }).catch(() => { statusEl.textContent = 'error al generar'; btn.disabled = false; btn.textContent = 'Generar partitura'; });
+  });
+
+  // --- Web MIDI ---
+  let midi = null, input = null;
+  function fillDevices() {
+    const sel = document.getElementById('device'); sel.innerHTML = '';
+    const ins = midi ? [...midi.inputs.values()] : [];
+    if (!ins.length) { sel.innerHTML = '<option>— conectá un teclado —</option>'; bindInput(null); return; }
+    ins.forEach(i => { const o = document.createElement('option'); o.value = i.id; o.textContent = i.name || i.id; sel.appendChild(o); });
+    bindInput(ins[0].id);
+    sel.onchange = () => bindInput(sel.value);
+  }
+  function bindInput(id) {
+    if (input) input.onmidimessage = null;
+    input = id && midi ? midi.inputs.get(id) : null;
+    if (input) input.onmidimessage = onMsg;
+  }
+
+  buildKeyboard();
+  if (!navigator.requestMIDIAccess) {
+    document.getElementById('nomidi').style.display = 'block';
+  } else {
+    document.getElementById('ui').style.display = 'block';
+    navigator.requestMIDIAccess({ sysex: false }).then(access => {
+      midi = access; fillDevices(); midi.onstatechange = fillDevices;
+    }).catch(() => { statusEl.textContent = 'no se pudo acceder al MIDI (¿diste permiso?)'; });
+  }
+})();
+</script>
+{% endblock %}

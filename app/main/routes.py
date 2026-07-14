@@ -97,6 +97,45 @@ def upload_midi():
     return redirect(url_for("main.job_view", job_id=job.id))
 
 
+@bp.get("/record")
+@login_required
+def record():
+    """Página para grabar un teclado MIDI en vivo (Web MIDI API) y generar la partitura."""
+    return render_template("record.html")
+
+
+@bp.post("/record")
+@login_required
+def record_save():
+    """Recibe las notas grabadas del teclado (mismo formato que el editor) -> MIDI -> partitura.
+    Reutiliza notes_to_midi + la cola de MIDI. Valida rangos como score_save_notes (§4.8)."""
+    data = request.get_json(silent=True) or {}
+    raw = data.get("notes")
+    if not isinstance(raw, list) or not raw or len(raw) > 50000:
+        return jsonify({"ok": False, "error": "sin_notas"}), 400
+    tempo = float(data.get("tempo") or 120.0)
+    tempo = tempo if 20 <= tempo <= 400 else 120.0
+
+    notes = []
+    for n in raw:
+        try:
+            p, s, e, v = int(n["pitch"]), float(n["start"]), float(n["end"]), int(n["velocity"])
+        except (KeyError, TypeError, ValueError):
+            continue
+        if 0 <= p <= 127 and s >= 0 and 0 < e - s <= 60 and 1 <= v <= 127:
+            notes.append({"pitch": p, "start": s, "end": e, "velocity": v})
+    if not notes:
+        return jsonify({"ok": False, "error": "sin_notas_validas"}), 400
+
+    title = (str(data.get("title") or "").strip() or "Grabación de teclado")[:200]
+    work_dir = tempfile.mkdtemp(prefix="clavis_")
+    from ..pipeline import notes_to_midi
+    src = os.path.join(work_dir, f"{uuid.uuid4().hex}.mid")
+    notes_to_midi(notes, tempo, src)
+    job = enqueue_midi(current_user.id, src, work_dir, title)
+    return jsonify({"ok": True, "job_id": job.id})
+
+
 @bp.post("/ingest")
 @login_required
 def ingest():
