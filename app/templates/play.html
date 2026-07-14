@@ -12,6 +12,10 @@
     <button id="play" class="btn btn--primary">▶ Reproducir</button>
     <button id="restart" class="btn btn--ghost" title="Desde el inicio">⏮</button>
     <span class="sep"></span>
+    <span class="muted">Modo</span>
+    <button id="mode-auto" class="btn btn--ghost on" data-w="0" title="Las notas avanzan solas (Synthesia)">Automático</button>
+    <button id="mode-wait" class="btn btn--ghost" data-w="1" title="Espera a que toques la tecla correcta para avanzar">Esperar tecla</button>
+    <span class="sep"></span>
     <span class="muted">Velocidad</span>
     <button class="btn btn--ghost spd" data-s="0.5">0.5×</button>
     <button class="btn btn--ghost spd" data-s="0.75">0.75×</button>
@@ -19,6 +23,7 @@
     <span class="sep"></span>
     <div id="bar" title="Click para saltar"><div id="fill"></div></div>
     <span id="time" class="muted">0:00 / 0:00</span>
+    <span id="mstatus" class="muted" style="font-family:var(--font-mono); color:var(--primary)"></span>
     <button id="fs" class="btn btn--ghost" title="Pantalla completa">⛶</button>
   </div>
   <div id="wrap"><canvas id="c"></canvas></div>
@@ -76,7 +81,20 @@
   // ---- reproducción con soundfont, con velocidad ajustable y reloj continuo ----
   let sfp = null, playing = false, raf = 0, speed = 1;
   let songT = 0, wall0 = 0;               // songT en "segundos de canción"; el reloj corre a *speed
-  const nowT = () => playing ? songT + (performance.now() / 1000 - wall0) * speed : songT;
+  const nowT = () => (playing && !waitMode) ? songT + (performance.now() / 1000 - wall0) * speed : songT;
+
+  // ---- modo "esperar tecla": pasos (acordes) que se completan al tocar las teclas correctas ----
+  let waitMode = false, steps = [], curStep = 0, waiting = false;
+  const mstatus = document.getElementById('mstatus');
+  function buildSteps() {                 // agrupar notas por onset (tolerancia = acorde)
+    steps = [];
+    const sorted = notes.slice().sort((a, b) => a.start - b.start);
+    let cur = null;
+    for (const n of sorted) {
+      if (cur && n.start - cur.t <= 0.07) { cur.need.add(n.pitch); }
+      else { cur = { t: n.start, need: new Set([n.pitch]), hit: new Set() }; steps.push(cur); }
+    }
+  }
 
   function pedalEnd(t) {                  // sostenido: si el pedal está apretado en t, sostener hasta soltarlo
     for (const p of pedals) if (p.start <= t && t < p.end) return p.end;
@@ -94,10 +112,15 @@
     return { notes: ns, totalTime: maxEnd + 0.5 };
   }
   function stopAudio() { if (sfp) { try { sfp.stop(); } catch (e) {} } cancelAnimationFrame(raf); playing = false; setBtn(); }
-  function pause() { if (!playing) return; songT = Math.min(nowT(), songDur); stopAudio(); }
+  function pause() {
+    if (!playing) return;
+    if (waitMode) { playing = false; cancelAnimationFrame(raf); setBtn(); return; }
+    songT = Math.min(nowT(), songDur); stopAudio();
+  }
   function play() {
     if (playing) { pause(); return; }
     if (!notes.length) return;
+    if (waitMode) { startWait(); return; }
     if (songT >= songDur) songT = 0;
     const seq = seqFrom(songT);
     if (!seq.notes.length) return;
@@ -125,6 +148,68 @@
     if (t >= songDur + 0.3) { stopAudio(); songT = 0; draw(0); return; }
     draw(t);
     raf = requestAnimationFrame(loop);
+  }
+
+  // ---- modo esperar tecla (paso a paso: el playhead se queda en cada nota hasta tocarla) ----
+  function monitorNote(pitch, vel) {      // sonido de feedback al tocar
+    try {
+      if (!sfp) sfp = new core.SoundFontPlayer(SOUNDFONT);
+      const seq = { notes: [{ pitch, startTime: 0, endTime: 0.6, velocity: vel || 80 }], totalTime: 0.7 };
+      sfp.loadSamples(seq).then(() => { try { sfp.start(seq); } catch (e) {} });
+    } catch (e) {}
+  }
+  function gotoStep(i) {                   // posicionar el playhead en el paso i, esperando su tecla
+    curStep = i;
+    if (i < steps.length) { steps[i].hit = new Set(); songT = steps[i].t; waiting = true; }
+  }
+  function startWait() {
+    if (!steps.length) return;
+    let i = songT >= songDur ? 0 : steps.findIndex(s => s.t >= songT - 0.001);
+    if (i < 0) i = 0;
+    gotoStep(i);
+    playing = true; ensureMIDI(); setBtn(); waitRender();
+  }
+  function waitRender() {                  // solo dibuja/actualiza; el avance lo dispara la tecla, no el tiempo
+    if (!playing || !waitMode) return;
+    if (curStep >= steps.length) { playing = false; waiting = false; setBtn(); mstatus.textContent = '¡completado! 🎉'; draw(songDur); return; }
+    const st = steps[curStep];
+    mstatus.textContent = 'tocá: ' + [...st.need].sort((a, b) => a - b).map(noteName).join(' ') + '  (' + st.hit.size + '/' + st.need.size + ')';
+    draw(songT);
+    raf = requestAnimationFrame(waitRender);
+  }
+  function onMidiNote(pitch, vel) {
+    monitorNote(pitch, vel);
+    if (!waitMode || !playing || curStep >= steps.length) return;
+    const st = steps[curStep];
+    if (st.need.has(pitch)) {
+      st.hit.add(pitch);
+      if (st.hit.size >= st.need.size) gotoStep(curStep + 1);   // acorde completo => siguiente nota
+    }
+  }
+  const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
+  const noteName = p => NOTE_NAMES[((p % 12) + 12) % 12] + (Math.floor(p / 12) - 1);
+
+  // ---- Web MIDI (para el modo esperar tecla) ----
+  let midi = null, midiReq = false;
+  function bindMidi() { if (!midi) return; for (const i of midi.inputs.values()) { try { i.open && i.open(); } catch (e) {} i.onmidimessage = onMidiMsg; } }
+  function onMidiMsg(e) { const b = e.data; if ((b[0] & 0xf0) === 0x90 && b[2] > 0) onMidiNote(b[1], b[2]); }
+  function ensureMIDI() {
+    if (midiReq || !navigator.requestMIDIAccess) {
+      if (!navigator.requestMIDIAccess) mstatus.textContent = 'sin Web MIDI (usá Chrome/Edge, o Firefox con el teclado conectado al iniciar)';
+      return;
+    }
+    midiReq = true;
+    navigator.requestMIDIAccess({ sysex: false }).then(a => { midi = a; bindMidi(); a.onstatechange = bindMidi; })
+      .catch(() => { mstatus.textContent = 'no se pudo acceder al teclado MIDI'; midiReq = false; });
+  }
+  function setMode(w) {
+    if (playing) pause();
+    waitMode = w;
+    document.getElementById('mode-auto').classList.toggle('on', !w);
+    document.getElementById('mode-wait').classList.toggle('on', w);
+    mstatus.textContent = '';
+    if (w) { ensureMIDI(); mstatus.textContent = 'conectá tu teclado y dale play'; }
+    draw(songT);
   }
 
   // ---- geometría del teclado ----
@@ -210,8 +295,11 @@
     timeEl.textContent = fmt(t) + ' / ' + fmt(songDur);
   }
 
+  const AMBER = '#F5A623';
   function drawKeyboard(active) {
     const bh = KB_H * 0.62;
+    const wait = (waitMode && waiting && curStep < steps.length) ? steps[curStep] : null;
+    const target = p => wait && wait.need.has(p) && !wait.hit.has(p);   // tecla pendiente por tocar
     // blancas
     for (let p = lo; p <= hi; p++) {
       const k = layout[p]; if (!k || k.black) continue;
@@ -222,6 +310,9 @@
       ctx.fillStyle = g; ctx.fillRect(k.x, keyTop, k.w, KB_H);
       ctx.strokeStyle = '#0b0d10'; ctx.lineWidth = 1; ctx.strokeRect(k.x + 0.5, keyTop + 0.5, k.w - 1, KB_H - 1);
       if (on) { ctx.fillStyle = c.g; ctx.fillRect(k.x, keyTop, k.w, 6); }
+      if (target(p)) { ctx.strokeStyle = AMBER; ctx.lineWidth = 3;
+        ctx.strokeRect(k.x + 1.5, keyTop + 1.5, k.w - 3, KB_H - 3);
+        ctx.fillStyle = 'rgba(245,166,35,.35)'; ctx.fillRect(k.x, keyTop, k.w, KB_H); }
       if (p % 12 === 0) { ctx.fillStyle = on ? '#06201c' : '#8b929c';
         ctx.font = '9px ' + getComputedStyle(document.body).fontFamily;
         ctx.textAlign = 'center'; ctx.fillText('C' + (p / 12 - 1), k.x + k.w / 2, cssH - 5); }
@@ -234,7 +325,7 @@
       if (on) { g.addColorStop(0, c.a); g.addColorStop(1, c.b); }
       else { g.addColorStop(0, '#2a2f37'); g.addColorStop(1, '#0d0f12'); }
       rrect(k.x, keyTop, k.w, bh, 3); ctx.fillStyle = g; ctx.fill();
-      ctx.strokeStyle = '#000'; ctx.lineWidth = 1; ctx.stroke();
+      ctx.strokeStyle = target(p) ? AMBER : '#000'; ctx.lineWidth = target(p) ? 2.5 : 1; ctx.stroke();
       if (on) { ctx.fillStyle = 'rgba(255,255,255,.5)'; rrect(k.x, keyTop, k.w, 4, 2); ctx.fill(); }
     }
   }
@@ -243,6 +334,8 @@
   playBtn.addEventListener('click', play);
   document.getElementById('restart').addEventListener('click', () => seek(0));
   document.querySelectorAll('.spd').forEach(b => b.addEventListener('click', () => setSpeed(parseFloat(b.dataset.s))));
+  document.getElementById('mode-auto').addEventListener('click', () => setMode(false));
+  document.getElementById('mode-wait').addEventListener('click', () => setMode(true));
   barEl.addEventListener('click', e => { const r = barEl.getBoundingClientRect(); seek((e.clientX - r.left) / r.width * songDur); });
   document.addEventListener('keydown', e => {
     if (/^(INPUT|SELECT|TEXTAREA)$/.test(e.target.tagName)) return;
@@ -258,6 +351,7 @@
     .then(r => r.json()).then(d => {
       tempo = d.tempo || 120; notes = d.notes || []; pedals = d.pedals || [];
       songDur = notes.reduce((m, n) => Math.max(m, n.end), 0);
+      buildSteps();
       if (notes.length) {
         let mn = 127, mx = 0; for (const n of notes) { if (n.pitch < mn) mn = n.pitch; if (n.pitch > mx) mx = n.pitch; }
         lo = Math.max(21, Math.floor(mn / 12) * 12);        // arrancar en un Do para un teclado prolijo
