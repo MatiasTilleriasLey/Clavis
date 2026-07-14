@@ -1,117 +1,259 @@
 {% extends "base.html" %}
 {% block title %}Mis partituras — Clavis{% endblock %}
 {% block content %}
-<span class="label">Dashboard</span>
-<h1 class="hero__title" style="font-size:32px">Mis partituras</h1>
+<div id="dash">
 
-<div class="card" style="margin-bottom:16px">
-  <span class="label">Nueva transcripción de piano</span>
-  <h3>Subir audio</h3>
-  <p class="muted" style="margin-bottom:16px">MP3, WAV, M4A o MP4 — hasta 100 MB. Ideal: piano solo.</p>
-  <form method="post" action="{{ url_for('main.upload') }}" enctype="multipart/form-data">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="field">
-      <input type="file" name="audio" accept=".mp3,.wav,.m4a,.mp4" required>
-    </div>
-    <label style="display:block; margin-bottom:12px">
-      <input type="checkbox" name="separate" value="1"> Aislar el piano de la mezcla
-      <span class="muted" style="font-size:13px">— para canciones con banda completa (usa Demucs, más lento)</span>
-    </label>
-    <button type="submit">Subir y transcribir</button>
-  </form>
+<div class="head">
+  <div>
+    <span class="label">Dashboard</span>
+    <h1 class="hero__title" style="font-size:30px">Mis partituras</h1>
+  </div>
+  {% if scores %}<span class="count">{{ scores|length }} partitura{{ 's' if scores|length != 1 }}</span>{% endif %}
 </div>
 
-<div class="card" style="margin-bottom:16px">
-  <span class="label">Desde un link</span>
-  <h3>YouTube · Instagram · TikTok</h3>
-  <p class="muted" style="margin-bottom:16px">Pegá el link; descargamos solo el audio.</p>
-  <form method="post" action="{{ url_for('main.ingest') }}">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="field">
+<!-- Panel de entrada con pestañas -->
+<section class="panel">
+  <div class="tabs" role="tablist">
+    <button class="tab active" data-tab="audio">🎵 Audio</button>
+    <button class="tab" data-tab="link">🔗 Link</button>
+    <button class="tab" data-tab="midi">🎹 MIDI</button>
+  </div>
+  <div class="panes">
+
+    <form class="pane active" id="pane-audio" method="post" action="{{ url_for('main.upload') }}" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <h3>Transcribir un archivo de audio</h3>
+      <p class="hint">MP3, WAV, M4A o MP4 — hasta 100 MB. Ideal: piano solo.</p>
+      <label class="filebtn">
+        <input type="file" name="audio" accept=".mp3,.wav,.m4a,.mp4" required>
+        <span class="filebtn__ico">📁</span><span class="filebtn__txt">Elegí un archivo…</span>
+      </label>
+      <label class="optrow">
+        <input type="checkbox" name="separate" value="1">
+        <span><strong>Aislar el piano de la mezcla</strong><br>
+          <span class="hint" style="margin:0">Para canciones con banda completa. Más lento (separación en cascada).</span></span>
+      </label>
+      <button type="submit" class="btn btn--primary btn--block">Subir y transcribir</button>
+    </form>
+
+    <form class="pane" id="pane-link" method="post" action="{{ url_for('main.ingest') }}">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <h3>Transcribir desde un link</h3>
+      <p class="hint">YouTube · Instagram · TikTok. Descargamos solo el audio.</p>
       <input type="url" name="url" placeholder="https://www.youtube.com/watch?v=…" required>
-    </div>
-    <label style="display:block; margin-bottom:12px">
-      <input type="checkbox" name="separate" value="1"> Aislar el piano de la mezcla
-      <span class="muted" style="font-size:13px">— para canciones con banda completa (usa Demucs, más lento)</span>
-    </label>
-    <button type="submit">Transcribir desde el link</button>
-  </form>
-</div>
+      <label class="optrow">
+        <input type="checkbox" name="separate" value="1">
+        <span><strong>Aislar el piano de la mezcla</strong><br>
+          <span class="hint" style="margin:0">Para canciones con banda completa. Más lento (separación en cascada).</span></span>
+      </label>
+      <button type="submit" class="btn btn--primary btn--block">Transcribir desde el link</button>
+    </form>
 
-<div class="card" style="margin-bottom:16px">
-  <span class="label">Desde un MIDI</span>
-  <h3>Subir un MIDI</h3>
-  <p class="muted" style="margin-bottom:16px">
-    ¿Ya tenés el MIDI? Subilo y generamos la partitura, el audio y el modo piano — sin transcribir.</p>
-  <form method="post" action="{{ url_for('main.upload_midi') }}" enctype="multipart/form-data">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <div class="field">
-      <input type="file" name="midi" accept=".mid,.midi" required>
-    </div>
-    <button type="submit">Generar desde MIDI</button>
-  </form>
-</div>
+    <form class="pane" id="pane-midi" method="post" action="{{ url_for('main.upload_midi') }}" enctype="multipart/form-data">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+      <h3>Generar desde un MIDI</h3>
+      <p class="hint">¿Ya tenés el MIDI? Generamos la partitura, el audio y el modo piano — sin transcribir.</p>
+      <label class="filebtn">
+        <input type="file" name="midi" accept=".mid,.midi" required>
+        <span class="filebtn__ico">🎹</span><span class="filebtn__txt">Elegí un MIDI…</span>
+      </label>
+      <button type="submit" class="btn btn--primary btn--block">Generar desde MIDI</button>
+    </form>
 
+  </div>
+</section>
+
+<!-- Trabajos en cola / recientes -->
 {% if jobs %}
-<div class="card" style="margin-bottom:16px">
+<section class="panel panel--pad">
   <span class="label">Trabajos</span>
-  <ul id="jobs" style="list-style:none; padding:0; margin:10px 0 0">
+  <ul id="jobs" class="jobs">
     {% for j in jobs %}
-    <li data-job="{{ j.id }}"
-        style="border-top:1px solid var(--border); padding:10px 0; display:flex;
-               justify-content:space-between; gap:12px; align-items:center">
-      <span>
-        <a href="{{ url_for('main.job_view', job_id=j.id) }}">Trabajo #{{ j.id }}</a>
-        <span class="muted js-state"> · {{ j.stage or j.status }}</span>
-      </span>
-      {% if j.status in ('queued', 'started') %}
+    <li class="job" data-job="{{ j.id }}" data-status="{{ j.status }}">
+      {% set run = j.status in ('queued', 'started') %}
+      <span class="dot {{ 'dot--run' if run else ('dot--fail' if j.status == 'failed' else 'dot--done') }}"></span>
+      <a href="{{ url_for('main.job_view', job_id=j.id) }}" class="job__name">Trabajo #{{ j.id }}</a>
+      <span class="badge js-state {{ 'badge--run' if run else ('badge--fail' if j.status == 'failed' else 'badge--other') }}">{{ j.stage or j.status }}</span>
+      <span class="job__spacer"></span>
+      {% if run %}
       <form method="post" action="{{ url_for('main.job_cancel', job_id=j.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="btn btn--ghost">Cancelar</button>
+        <button type="submit" class="btn btn--ghost btn--sm">Cancelar</button>
       </form>
       {% else %}
       <form method="post" action="{{ url_for('main.job_dismiss', job_id=j.id) }}">
         <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="btn btn--ghost">Descartar</button>
+        <button type="submit" class="btn btn--ghost btn--sm">Descartar</button>
       </form>
       {% endif %}
     </li>
     {% endfor %}
   </ul>
+</section>
+{% endif %}
+
+<!-- Partituras -->
+{% if scores %}
+<div class="scores">
+  {% for s in scores %}
+  <article class="score">
+    <a class="score__art" href="{{ url_for('main.score_view', score_id=s.id) }}" aria-label="Abrir {{ s.title }}"></a>
+    <div class="score__body">
+      <span class="label">{{ s.instrument }}</span>
+      <h3>{{ s.title }}</h3>
+      <p class="score__meta">
+        {% if s.created_at %}{{ s.created_at.strftime('%d/%m/%Y') }}{% endif %}
+        {% if s.composer %} · {{ s.composer }}{% endif %}
+      </p>
+      <div class="score__actions">
+        <a class="btn btn--primary btn--sm" href="{{ url_for('main.score_view', score_id=s.id) }}">Abrir</a>
+        {% if s.has_midi %}<a class="btn btn--ghost btn--sm" href="{{ url_for('main.score_play', score_id=s.id) }}" target="_blank">Modo piano</a>{% endif %}
+        {% if s.has_pdf %}<a class="btn btn--ghost btn--sm" href="{{ url_for('main.score_pdf', score_id=s.id) }}">PDF</a>{% endif %}
+        <form method="post" action="{{ url_for('main.score_delete', score_id=s.id) }}"
+              onsubmit="return confirm('¿Borrar esta partitura?')" class="score__del">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn btn--ghost btn--sm btn--danger" title="Borrar">✕</button>
+        </form>
+      </div>
+    </div>
+  </article>
+  {% endfor %}
+</div>
+{% else %}
+<div class="panel panel--pad">
+  <div class="empty">
+    <div class="empty__ico">🎼</div>
+    <p>Todavía no tenés partituras.</p>
+    <p class="muted">Subí un audio, pegá un link o subí un MIDI para generar la primera.</p>
+  </div>
 </div>
 {% endif %}
 
-{% if scores %}
-  <div class="grid">
-    {% for s in scores %}
-    <div class="card">
-      <span class="label">{{ s.instrument }}</span>
-      <h3>{{ s.title }}</h3>
-      <p class="links">
-        <a href="{{ url_for('main.score_view', score_id=s.id) }}">Ver partitura</a>
-        {% if s.has_pdf %} · <a href="{{ url_for('main.score_pdf', score_id=s.id) }}">PDF</a>{% endif %}
-      </p>
-      <form method="post" action="{{ url_for('main.score_delete', score_id=s.id) }}"
-            onsubmit="return confirm('¿Borrar esta partitura?')" style="margin-top:8px">
-        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-        <button type="submit" class="btn btn--ghost">Borrar</button>
-      </form>
-    </div>
-    {% endfor %}
-  </div>
-{% else %}
-  <div class="card"><div class="empty">
-    <p>Todavía no tenés partituras.</p>
-    <p class="muted">Subí un audio para generar la primera.</p>
-  </div></div>
-{% endif %}
+</div>
+
+<style>
+  #dash .head { display:flex; align-items:flex-end; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:22px; }
+  #dash .head .hero__title { margin:8px 0 0; }
+  #dash .count { font-family:var(--font-mono); font-size:13px; color:var(--text-2);
+    border:1px solid var(--border); border-radius:var(--r-pill); padding:6px 14px; }
+
+  /* Panel + pestañas */
+  .panel { background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    overflow:hidden; margin-bottom:24px; box-shadow:0 12px 34px -18px rgba(0,0,0,.7); }
+  .panel--pad { padding:20px 22px; }
+  .tabs { display:flex; gap:4px; background:linear-gradient(180deg,#14171b,#0f1215);
+    border-bottom:1px solid var(--border); padding:8px 8px 0; }
+  .tab { padding:10px 18px; border:none; background:transparent; color:var(--text-2);
+    font:inherit; font-weight:600; font-size:14px; cursor:pointer;
+    border-radius:8px 8px 0 0; border-bottom:2px solid transparent; transition:color .15s, background .15s; }
+  .tab:hover { color:var(--text); }
+  .tab.active { color:var(--primary); background:var(--surface); border-bottom-color:var(--primary); }
+  .panes { padding:24px; }
+  .pane { display:none; }
+  .pane.active { display:block; animation:paneIn .25s cubic-bezier(.2,.7,.2,1) both; }
+  @keyframes paneIn { from{opacity:0; transform:translateY(6px)} to{opacity:1; transform:none} }
+  .pane h3 { margin:0 0 4px; font-size:18px; font-weight:600; }
+  .pane .hint { color:var(--text-2); font-size:13px; margin:0 0 16px; line-height:1.5; }
+
+  /* Selector de archivo */
+  .filebtn { display:flex; align-items:center; gap:12px; padding:16px; border:1.5px dashed #333842;
+    border-radius:10px; background:#0f1216; cursor:pointer; transition:border-color .15s, background .15s; }
+  .filebtn:hover, .filebtn.has { border-color:var(--primary); background:#12171b; }
+  .filebtn input { position:absolute; width:1px; height:1px; opacity:0; }
+  .filebtn__ico { font-size:20px; }
+  .filebtn__txt { color:var(--text-2); font-size:14px; }
+  .filebtn.has .filebtn__txt { color:var(--text); }
+
+  #dash input[type=url] { background:#0f1216; border:1px solid #2c313a; }
+  #dash input[type=url]:focus { border-color:var(--primary); }
+
+  /* Opción "aislar piano" */
+  .optrow { display:flex; align-items:flex-start; gap:12px; margin:16px 0; padding:14px;
+    background:#0f1216; border:1px solid var(--border); border-radius:10px; cursor:pointer; }
+  .optrow input[type=checkbox] { width:18px; height:18px; accent-color:var(--primary); margin-top:2px; flex:none; }
+  .optrow strong { font-weight:600; font-size:14px; }
+
+  /* Anular reglas globales de formularios dentro del dashboard */
+  #dash .optrow > span { color:var(--text); }                 /* no rojo (regla global form span) */
+  #dash button[type=submit] { width:auto; }                    /* no full-width por defecto */
+  #dash button.btn--block { width:100%; }                      /* salvo el CTA */
+  #dash .btn--ghost { background:#20242b; border-color:#2c313a; color:#e5e7eb; }
+  #dash .btn--ghost:hover { border-color:var(--primary); color:#fff; }
+
+  .btn--block { margin-top:6px; }
+  .btn--sm { padding:7px 13px; font-size:13px; border-radius:7px; }
+  #dash .btn--danger { padding:7px 11px; background:#20242b; }
+  #dash .btn--danger:hover { border-color:#ef4444; color:#ef4444; background:#241416; }
+
+  /* Trabajos */
+  .jobs { list-style:none; padding:0; margin:12px 0 0; }
+  .job { display:flex; align-items:center; gap:12px; padding:12px 0; border-top:1px solid var(--border); }
+  .job:first-child { border-top:none; }
+  .job__name { font-weight:600; }
+  .job__spacer { flex:1; }
+  .dot { width:9px; height:9px; border-radius:50%; flex:none; }
+  .dot--run { background:var(--primary); box-shadow:0 0 0 0 rgba(45,212,191,.6); animation:pulse 1.6s infinite; }
+  .dot--fail { background:#ef4444; }
+  .dot--done { background:var(--text-2); }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(45,212,191,.5)} 70%{box-shadow:0 0 0 7px rgba(45,212,191,0)} 100%{box-shadow:0 0 0 0 rgba(45,212,191,0)} }
+  .badge { font-family:var(--font-mono); font-size:11px; padding:3px 9px; border-radius:6px;
+    text-transform:lowercase; letter-spacing:.02em; }
+  .badge--run { color:#06201c; background:var(--primary); }
+  .badge--fail { color:#fff; background:#b91c1c; }
+  .badge--other { color:var(--text-2); background:#20242b; }
+
+  /* Partituras */
+  .scores { display:grid; grid-template-columns:repeat(auto-fill, minmax(230px, 1fr)); gap:16px; }
+  .score { background:var(--surface); border:1px solid var(--border); border-radius:14px;
+    overflow:hidden; display:flex; flex-direction:column;
+    transition:transform .18s ease, border-color .18s ease, box-shadow .18s ease; }
+  .score:hover { transform:translateY(-4px); border-color:var(--primary);
+    box-shadow:0 16px 34px -18px rgba(45,212,191,.45); }
+  .score__art { display:block; height:92px; position:relative; overflow:hidden;
+    background:linear-gradient(135deg,#0c2a26,#0a1512);
+    background-image:linear-gradient(135deg,#0c2a26,#0a1512),
+      repeating-linear-gradient(0deg, transparent 0 17px, rgba(45,212,191,.18) 17px 18px); }
+  .score__art::after { content:'♫'; position:absolute; right:14px; bottom:2px; font-size:52px;
+    color:rgba(45,212,191,.35); line-height:1; }
+  .score__body { padding:16px; display:flex; flex-direction:column; gap:6px; flex:1; }
+  .score__body h3 { margin:2px 0 0; font-size:16px; font-weight:600; line-height:1.3;
+    overflow:hidden; text-overflow:ellipsis; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .score__meta { color:var(--text-2); font-family:var(--font-mono); font-size:12px; margin:0; }
+  .score__actions { margin-top:auto; display:flex; gap:6px; flex-wrap:wrap; align-items:center; padding-top:8px; }
+  .score__del { margin-left:auto; }
+
+  /* Estado vacío */
+  .empty { text-align:center; padding:48px 24px; }
+  .empty__ico { font-size:44px; margin-bottom:8px; }
+  .empty p { margin:4px 0; }
+</style>
 {% endblock %}
 
 {% block scripts %}
+<script>
+  // Pestañas del panel de entrada
+  (function () {
+    var tabs = document.querySelectorAll('#dash .tab');
+    tabs.forEach(function (t) {
+      t.addEventListener('click', function () {
+        tabs.forEach(function (x) { x.classList.remove('active'); });
+        document.querySelectorAll('#dash .pane').forEach(function (p) { p.classList.remove('active'); });
+        t.classList.add('active');
+        document.getElementById('pane-' + t.getAttribute('data-tab')).classList.add('active');
+      });
+    });
+    // Mostrar el nombre del archivo elegido
+    document.querySelectorAll('.filebtn input').forEach(function (inp) {
+      inp.addEventListener('change', function () {
+        var lb = inp.closest('.filebtn'), txt = lb.querySelector('.filebtn__txt');
+        if (inp.files && inp.files.length) { txt.textContent = inp.files[0].name; lb.classList.add('has'); }
+      });
+    });
+  })();
+</script>
 {% if jobs %}
 <script>
-  // Actualiza en vivo el estado/etapa de cada job en proceso. Recarga cuando uno termina
-  // (para que aparezca su partitura y se caiga de la lista).
+  // Actualiza en vivo el estado/etapa de cada job. Recarga cuando uno termina.
   (function () {
     var rows = Array.prototype.slice.call(document.querySelectorAll('#jobs li[data-job]'));
     function poll() {
@@ -120,7 +262,7 @@
         fetch('/job/' + li.getAttribute('data-job') + '/status', {headers: {'Accept': 'application/json'}})
           .then(function (r) { return r.json(); })
           .then(function (d) {
-            li.querySelector('.js-state').textContent = ' · ' + (d.stage || d.status);
+            li.querySelector('.js-state').textContent = d.stage || d.status;
             if (d.status === 'finished') done = true;
             if (d.status === 'queued' || d.status === 'started') active = true;
           })
