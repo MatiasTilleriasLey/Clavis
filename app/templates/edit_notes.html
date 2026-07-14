@@ -5,14 +5,14 @@
 <span class="label">Editor de notas</span>
 <h1 class="hero__title" style="font-size:26px">{{ score.title }}</h1>
 <p class="muted" style="font-size:13px; margin:4px 0 12px">
-  Click = agregar · arrastrá = mover · borde derecho = alargar · doble-click = borrar ·
-  click sobre una nota = seleccionarla (<strong>Ctrl+click</strong> suma/quita) ·
-  <strong>Shift+arrastrar</strong> = seleccionar área · <strong>Alt</strong> mientras arrastrás
-  = mover/extender libre (ignora la grilla) · <strong>Ctrl+rueda</strong> = zoom (con Shift,
-  vertical) · flechas mueven la selección · <strong>±largo</strong> (o teclas [ ]) alarga/acorta
-  la selección · <strong>Mutear</strong> (M) silencia notas solo al reproducir. Abajo: carriles de
-  <strong>volumen</strong> (editable en la nota seleccionada) y de <strong>pedal</strong>.
-  Al guardar se regenera la partitura, el audio y el modo piano.
+  Click = agregar · arrastrá el cuerpo = mover · <strong>arrastrá el borde derecho = alargar/acortar</strong>
+  (a la grilla; con <strong>Alt</strong>, libre; si hay varias seleccionadas, todas juntas) ·
+  doble-click = borrar · click sobre una nota = seleccionarla (<strong>Ctrl+click</strong> suma/quita) ·
+  <strong>Shift+arrastrar</strong> = seleccionar área · <strong>Ctrl+rueda</strong> = zoom (con Shift,
+  vertical) · flechas mueven la selección · <strong>Mutear</strong> (M) silencia la selección ·
+  <strong>Solo</strong> (S) escucha solo la selección. Abajo: carriles de <strong>volumen</strong>
+  (editable en la nota seleccionada) y de <strong>pedal</strong>. Al guardar se regenera la partitura,
+  el audio y el modo piano.
 </p>
 
 <div id="editor-wrap">
@@ -30,6 +30,7 @@
   <button id="merge" class="btn btn--ghost" title="Fusionar notas del mismo tono contiguas en una sola">⇔ Fusionar</button>
   <button id="eqvol" class="btn btn--ghost" title="Igualar el volumen de las notas seleccionadas">🔊 Igualar volumen</button>
   <button id="mute" class="btn btn--ghost" title="Mutear/reactivar la selección (M) — la silencia solo en la reproducción">🔇 Mutear</button>
+  <button id="solo" class="btn btn--ghost" title="Solo (S) — escuchar solo la selección; el resto se silencia">🎧 Solo</button>
   <button id="select-all" class="btn btn--ghost" title="Seleccionar todo (Ctrl+A)">Sel. todo</button>
   <span class="sep"></span>
   <button id="save" class="btn btn--primary">Guardar y regenerar</button>
@@ -70,10 +71,6 @@
   <button id="tr-1d" class="btn btn--ghost">−1</button>
   <button id="tr-1u" class="btn btn--ghost">+1</button>
   <button id="tr-8u" class="btn btn--ghost" title="+1 octava">+8va</button>
-  <span class="sep"></span>
-  <span class="muted">Duración</span>
-  <button id="len-dn" class="btn btn--ghost" title="Acortar la selección un paso de grilla">− largo</button>
-  <button id="len-up" class="btn btn--ghost" title="Alargar la selección un paso de grilla (o arrastrá el borde derecho; con Alt, libre)">+ largo</button>
 </div>
 
 <div id="editor">
@@ -192,6 +189,7 @@
   let tempo = 120, notes = [], pedals = [], width = 2000;
   let PLO = 48, PHI = 84, ROW = 14, ROWS = 37, GRIDH = 518, rowOverride = 0;
   const selection = new Set();
+  let soloSet = null;   // si != null, solo suenan estas notas (modo Solo)
   const noteName = p => NAMES[((p % 12) + 12) % 12] + (Math.floor(p / 12) - 1);
 
   // cabezal + regla clickeable (seek) + overlay de loop
@@ -265,17 +263,25 @@
     el.style.width = Math.max(3, (n.end - n.start) * PPS) + 'px';
     el.style.height = (ROW - 1) + 'px';
   }
+  const RESIZE_ZONE = 10;   // px del borde derecho que arrastran para alargar/acortar
   function noteEl(n) {
     const el = document.createElement('div');
+    const soloOut = soloSet && !soloSet.has(n);      // fuera del solo => atenuada
     const bg = n.muted ? 'repeating-linear-gradient(45deg,#4b5563,#4b5563 5px,#374151 5px,#374151 10px)'
       : 'linear-gradient(180deg,#5eead4,#2DD4BF 45%,#17a394)';
+    const op = n.muted ? '.55' : (soloOut ? '.28' : opacityFor(n.velocity));
     el.style.cssText = 'position:absolute;background:' + bg + ';border:1px solid ' + (n.muted ? '#6b7280' : '#0b5c53') +
       ';border-top-color:' + (n.muted ? '#9ca3af' : '#7ff0e0') + ';border-radius:3px;box-sizing:border-box;' +
-      'cursor:grab;box-shadow:0 1px 2px rgba(0,0,0,.45);opacity:' + (n.muted ? '.55' : opacityFor(n.velocity));
+      'cursor:grab;box-shadow:0 1px 2px rgba(0,0,0,.45);opacity:' + op;
     place(el, n);
     if (selection.has(n)) selStyle(el, true);
     el.addEventListener('mousedown', e => startDrag(e, n, el));
     el.addEventListener('dblclick', e => { e.stopPropagation(); removeNote(n, el); });
+    el.addEventListener('mousemove', e => {          // cursor de "alargar" al acercarse al borde derecho
+      if (drag) return;
+      const rr = el.getBoundingClientRect();
+      el.style.cursor = (e.clientX > rr.right - RESIZE_ZONE) ? 'ew-resize' : 'grab';
+    });
     n.el = el; return el;
   }
 
@@ -298,7 +304,11 @@
   function snapNotes() { return notes.map(n => ({ pitch: n.pitch, start: n.start, end: n.end, velocity: n.velocity, muted: n.muted || false })); }
   function snapshot() { return { notes: snapNotes(), pedals: pedals.map(p => ({ start: p.start, end: p.end })) }; }
   function pushHistory() { history.push(snapshot()); if (history.length > 80) history.shift(); redoStack.length = 0; }
-  function restore(st) { notes = st.notes; pedals = st.pedals; selection.clear(); render(); dirty(); }
+  function restore(st) {
+    notes = st.notes; pedals = st.pedals; selection.clear();
+    soloSet = null; document.getElementById('solo').classList.remove('on');   // evita refs viejas
+    render(); dirty();
+  }
   function undo() {
     if (!history.length) { statusEl.textContent = 'nada para deshacer'; return; }
     redoStack.push(snapshot()); restore(history.pop()); statusEl.textContent = 'deshecho';
@@ -502,7 +512,7 @@
   let drag = null;
   function startDrag(e, n, el) {
     e.preventDefault(); e.stopPropagation();
-    const r = el.getBoundingClientRect(), resize = (e.clientX > r.right - 7);
+    const r = el.getBoundingClientRect(), resize = (e.clientX > r.right - RESIZE_ZONE);
     drag = { resize, moved: false, ox: e.clientX, oy: e.clientY, n, el, ctrl: (e.ctrlKey || e.metaKey), group: null, s0: n.start, e0: n.end };
     document.body.style.userSelect = 'none';
   }
@@ -616,7 +626,16 @@
     statusEl.textContent = (anyOn ? 'muteadas ' : 'reactivadas ') + arr.length + ' nota(s)';
   }
 
-  // --- alargar / acortar la selección un paso de grilla (el drag del borde también sirve; Alt = libre) ---
+  // --- solo: escuchar solo la selección (silencia el resto) ---
+  function toggleSolo() {
+    const btn = document.getElementById('solo');
+    if (soloSet) { soloSet = null; btn.classList.remove('on'); render(); statusEl.textContent = 'solo off'; return; }
+    if (!selection.size) { statusEl.textContent = 'seleccioná notas para el solo'; return; }
+    soloSet = new Set(selection); btn.classList.add('on'); render();
+    statusEl.textContent = 'solo: ' + soloSet.size + ' nota(s)';
+  }
+
+  // --- alargar / acortar la selección un paso de grilla (para las teclas [ ]; también arrastrando el borde) ---
   function lengthenSel(delta) {
     if (!selection.size) { statusEl.textContent = 'seleccioná notas para alargar/acortar'; return; }
     pushHistory();
@@ -682,6 +701,7 @@
   function subSeqFrom(fromT) {
     const ns = []; let maxEnd = 0;
     notes.forEach(n => {
+      if (soloSet && !soloSet.has(n)) return;         // modo solo: solo suenan las del set
       if (n.muted) return;                            // muteadas: no suenan
       if (n.end <= fromT + 0.001) return;
       const en = n.end - fromT;
@@ -764,9 +784,7 @@
   document.getElementById('merge').addEventListener('click', mergeSel);
   document.getElementById('eqvol').addEventListener('click', equalizeVol);
   document.getElementById('mute').addEventListener('click', toggleMute);
-  const lenStep = () => step() || (60 / tempo) / 2;   // paso de grilla, o corchea si es "Libre"
-  document.getElementById('len-up').addEventListener('click', () => lengthenSel(lenStep()));
-  document.getElementById('len-dn').addEventListener('click', () => lengthenSel(-lenStep()));
+  document.getElementById('solo').addEventListener('click', toggleSolo);
   document.getElementById('select-all').addEventListener('click', selectAll);
   document.getElementById('brush').addEventListener('click', function () { this.classList.toggle('on'); });
   document.getElementById('zoom-in').addEventListener('click', () => zoomH(1.25, null));
@@ -800,6 +818,7 @@
     else if (mod && e.code === 'KeyD') { e.preventDefault(); duplicate(); }
     else if (e.code === 'Space') { e.preventDefault(); startPlay(); }
     else if (e.code === 'KeyM') { e.preventDefault(); toggleMute(); }
+    else if (e.code === 'KeyS' && !mod) { e.preventDefault(); toggleSolo(); }
     else if (e.code === 'BracketRight') { e.preventDefault(); lengthenSel(step() || (60 / tempo) / 2); }
     else if (e.code === 'BracketLeft') { e.preventDefault(); lengthenSel(-(step() || (60 / tempo) / 2)); }
     else if (e.code === 'ArrowUp') { e.preventDefault(); moveSel(0, e.shiftKey ? 12 : 1); }
