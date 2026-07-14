@@ -58,6 +58,7 @@
     </select>
   </label>
   <button id="quantize" class="btn btn--ghost" title="Ajustar a la celda más cercana">⊹ Ajustar</button>
+  <button id="taps-pedal" class="btn btn--ghost" title="Acortar a un toque las notas que caen bajo un pedal (el pedal las sostiene al reproducir)">↧ Toque bajo pedal</button>
   <button id="brush" class="btn btn--ghost" title="Modo pincel: pintá notas arrastrando">🖌 Pincel</button>
   <button id="split" class="btn btn--ghost" title="Modo dividir: click sobre una nota para cortarla ahí (a la grilla; con Alt, libre)">✂ Dividir</button>
   <span class="sep"></span>
@@ -660,6 +661,22 @@
     statusEl.textContent = (delta >= 0 ? 'alargadas' : 'acortadas') + ' ' + selection.size + ' nota(s)';
   }
 
+  // --- acortar a un toque las notas bajo pedal (el pedal, ahora audible, las sostiene) ---
+  function tapsUnderPedal() {
+    if (!pedals.length) { statusEl.textContent = 'no hay pedal marcado (dibujalo en el carril Pedal)'; return; }
+    const target = selection.size ? notes.filter(n => selection.has(n)) : notes;
+    const TAP = 0.12;
+    pushHistory();
+    let count = 0;
+    target.forEach(n => {
+      const under = pedals.some(p => n.start >= p.start - 0.02 && n.start < p.end);
+      if (under && n.end - n.start > TAP) { n.end = n.start + TAP; if (n.el) place(n.el, n); count++; }
+    });
+    if (!count) { history.pop(); statusEl.textContent = 'no hay notas largas bajo pedal'; return; }
+    veloRender(); dirty();
+    statusEl.textContent = count + ' notas acortadas a toque (el pedal las sostiene)';
+  }
+
   // --- transponer / mover selección ---
   function moveSel(dt, dp) {
     if (!selection.size) { statusEl.textContent = 'nada seleccionado'; return; }
@@ -714,13 +731,18 @@
     } catch (e) {}
   }
 
+  function pedalEnd(t) {                               // sostenido: si el pedal está apretado en t, sostener hasta soltarlo
+    for (const p of pedals) if (p.start <= t && t < p.end) return p.end;
+    return t;
+  }
   function subSeqFrom(fromT) {
     const ns = []; let maxEnd = 0;
     notes.forEach(n => {
       if (soloSet && !soloSet.has(n)) return;         // modo solo: solo suenan las del set
       if (n.muted) return;                            // muteadas: no suenan
-      if (n.end <= fromT + 0.001) return;
-      const en = n.end - fromT;
+      const audEnd = pedalEnd(n.end);                 // aplicar el pedal de sustain a la reproducción
+      if (audEnd <= fromT + 0.001) return;
+      const en = audEnd - fromT;
       ns.push({ pitch: n.pitch, startTime: Math.max(0, n.start - fromT), endTime: en, velocity: n.velocity });
       maxEnd = Math.max(maxEnd, en);
     });
@@ -798,6 +820,7 @@
   document.getElementById('paste').addEventListener('click', paste);
   document.getElementById('dup').addEventListener('click', duplicate);
   document.getElementById('merge').addEventListener('click', mergeSel);
+  document.getElementById('taps-pedal').addEventListener('click', tapsUnderPedal);
   document.getElementById('eqvol').addEventListener('click', equalizeVol);
   document.getElementById('mute').addEventListener('click', toggleMute);
   document.getElementById('solo').addEventListener('click', toggleSolo);

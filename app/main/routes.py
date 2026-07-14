@@ -37,12 +37,13 @@ def _valid_engine(value):
     return value if value in keys else DEFAULT
 
 
-# Umbral de onsets de ByteDance: presets acotados (allowlist). None = default del modelo (0.3).
-ONSET_PRESETS = {"0.5", "0.7"}
-
-
 def _valid_onset(value):
-    return float(value) if value in ONSET_PRESETS else None
+    """Umbral de onsets de ByteDance (slider). Clamp a [0.1, 0.9]. None si no viene un número
+    (ej. pestaña MIDI) => usa el default del modelo (0.3). Más alto = menos notas fantasma."""
+    try:
+        return max(0.1, min(0.9, float(value)))
+    except (TypeError, ValueError):
+        return None
 
 
 @bp.post("/upload")

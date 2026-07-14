@@ -69,7 +69,7 @@
   const L = { a: '#a5b4fc', b: '#6366f1', g: 'rgba(129,140,248,.55)' };  // mano izquierda (indigo)
   const hand = p => (p < 60 ? L : R);
 
-  let notes = [], tempo = 120, songDur = 0, lo = 48, hi = 84;
+  let notes = [], pedals = [], tempo = 120, songDur = 0, lo = 48, hi = 84;
   let cssW = 0, cssH = 0, KB_H = 96, keyTop = 0, pxs = 200;
   const layout = {};                      // pitch -> {x, w, black}
 
@@ -78,11 +78,16 @@
   let songT = 0, wall0 = 0;               // songT en "segundos de canción"; el reloj corre a *speed
   const nowT = () => playing ? songT + (performance.now() / 1000 - wall0) * speed : songT;
 
+  function pedalEnd(t) {                  // sostenido: si el pedal está apretado en t, sostener hasta soltarlo
+    for (const p of pedals) if (p.start <= t && t < p.end) return p.end;
+    return t;
+  }
   function seqFrom(fromT) {               // notas desde fromT, en segundos reales (escaladas por 1/speed)
     const ns = []; let maxEnd = 0;
     for (const n of notes) {
-      if (n.end <= fromT + 0.001) continue;
-      const e = (n.end - fromT) / speed;
+      const audEnd = pedalEnd(n.end);      // aplicar el pedal de sustain
+      if (audEnd <= fromT + 0.001) continue;
+      const e = (audEnd - fromT) / speed;
       ns.push({ pitch: n.pitch, startTime: Math.max(0, (n.start - fromT) / speed), endTime: e, velocity: n.velocity || 80 });
       if (e > maxEnd) maxEnd = e;
     }
@@ -251,7 +256,7 @@
   // ---- carga ----
   fetch('/score/' + scoreId + '/notes', { headers: { 'Accept': 'application/json' } })
     .then(r => r.json()).then(d => {
-      tempo = d.tempo || 120; notes = d.notes || [];
+      tempo = d.tempo || 120; notes = d.notes || []; pedals = d.pedals || [];
       songDur = notes.reduce((m, n) => Math.max(m, n.end), 0);
       if (notes.length) {
         let mn = 127, mx = 0; for (const n of notes) { if (n.pitch < mn) mn = n.pitch; if (n.pitch > mx) mx = n.pitch; }

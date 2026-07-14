@@ -13,13 +13,13 @@
 {% endmacro %}
 
 {% macro sensitivity_select() %}
-  <label class="enginesel">Sensibilidad de detección
-    <select name="onset">
-      <option value="">Normal</option>
-      <option value="0.5">Menos notas fantasma</option>
-      <option value="0.7">Estricto (aún menos)</option>
-    </select>
-    <span class="hint" style="margin:0">Si te agrega notas que no van, subí el umbral. Aplica al motor ByteDance.</span>
+  <label class="enginesel">Umbral de detección
+    <span class="slider">
+      <input type="range" name="onset" min="0.1" max="0.9" step="0.01" value="0.3"
+             oninput="this.nextElementSibling.value = (+this.value).toFixed(2)">
+      <output>0.30</output>
+    </span>
+    <span class="hint" style="margin:0">Más alto = menos notas fantasma (pero puede perder notas suaves). Default 0.30. Aplica a ByteDance.</span>
   </label>
 {% endmacro %}
 
@@ -219,6 +219,9 @@
   .enginesel select { display:block; margin:6px 0; background:#0f1216; border:1px solid #2c313a;
     color:var(--text); border-radius:8px; padding:8px 10px; font:inherit; }
   .enginesel select:focus { outline:none; border-color:var(--primary); }
+  .enginesel .slider { display:flex; align-items:center; gap:12px; margin:8px 0; max-width:420px; }
+  .enginesel input[type=range] { flex:1; accent-color:var(--primary); }
+  .enginesel output { font-family:var(--font-mono); color:var(--primary); min-width:38px; text-align:right; }
 
   .btn--block { margin-top:6px; }
   .btn--sm { padding:7px 13px; font-size:13px; border-radius:7px; }
