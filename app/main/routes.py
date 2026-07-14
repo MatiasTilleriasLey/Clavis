@@ -30,6 +30,13 @@ def _owned_job(job_id):
     return Job.query.filter_by(id=job_id, user_id=current_user.id).first_or_404()
 
 
+def _valid_engine(value):
+    """Allowlist server-side del motor de transcripción: solo motores disponibles; si no, el local."""
+    from ..transcribers import DEFAULT, available_engines
+    keys = {e["key"] for e in available_engines()}
+    return value if value in keys else DEFAULT
+
+
 @bp.post("/upload")
 @login_required
 def upload():
@@ -49,13 +56,14 @@ def upload():
         return redirect(url_for("auth.dashboard"))
 
     separate = request.form.get("separate") == "1"  # aislar el piano de la mezcla (Demucs)
+    engine = _valid_engine(request.form.get("engine"))
 
     title = (os.path.splitext(f.filename or "audio")[0] or "audio")[:200]  # solo display
     # work_dir persiste hasta que el worker termine y lo limpie (audio nunca se persiste).
     work_dir = tempfile.mkdtemp(prefix="clavis_")
     src = os.path.join(work_dir, f"{uuid.uuid4().hex}.{kind}")
     f.save(src)
-    job = enqueue_transcription(current_user.id, src, work_dir, title, separate)
+    job = enqueue_transcription(current_user.id, src, work_dir, title, separate, engine)
     return redirect(url_for("main.job_view", job_id=job.id))
 
 
@@ -93,6 +101,7 @@ def ingest():
         return redirect(url_for("auth.dashboard"))
 
     separate = request.form.get("separate") == "1"
+    engine = _valid_engine(request.form.get("engine"))
     confirmed = request.form.get("confirm") == "1"
     try:
         duration, title = probe(url)
@@ -107,10 +116,11 @@ def ingest():
         return redirect(url_for("auth.dashboard"))
     # Advertencia blanda (UX): pedir confirmación explícita si supera 15 min.
     if duration is not None and duration > SOFT_CAP_SECONDS and not confirmed:
-        return render_template("confirm_long.html", url=url, separate=separate, minutes=duration // 60)
+        return render_template("confirm_long.html", url=url, separate=separate, engine=engine,
+                               minutes=duration // 60)
 
     work_dir = tempfile.mkdtemp(prefix="clavis_")
-    job = enqueue_ingest(current_user.id, url, work_dir, title, separate)
+    job = enqueue_ingest(current_user.id, url, work_dir, title, separate, engine)
     return redirect(url_for("main.job_view", job_id=job.id))
 
 

@@ -266,4 +266,6 @@ def dashboard():
     jobs = (Job.query.filter_by(user_id=current_user.id)
             .filter(Job.status.in_(("queued", "started", "failed")))
             .order_by(Job.created_at.desc()).all())
-    return render_template("dashboard.html", scores=scores, jobs=jobs)
+    from ..transcribers import available_engines
+    engines = available_engines()   # para el <select> de motor (solo si hay más de uno)
+    return render_template("dashboard.html", scores=scores, jobs=jobs, engines=engines)

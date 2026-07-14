@@ -20,9 +20,10 @@ def _redis():
     return Redis.from_url(current_app.config["REDIS_URL"])
 
 
-def enqueue_transcription(user_id, audio_path, work_dir, title, separate=False):
+def enqueue_transcription(user_id, audio_path, work_dir, title, separate=False, engine="local"):
     """Crea el Job en DB y lo encola (o lo corre inline si RQ_ASYNC=False, para tests).
-    `separate`: si True, aísla el piano de la mezcla (Demucs) antes de transcribir."""
+    `separate`: si True, aísla el piano de la mezcla (Demucs) antes de transcribir.
+    `engine`: motor de transcripción (app/transcribers.py)."""
     from flask import current_app
     from .models import Job
 
@@ -33,15 +34,15 @@ def enqueue_transcription(user_id, audio_path, work_dir, title, separate=False):
     if current_app.config.get("RQ_ASYNC", True):
         q = Queue(QUEUE_NAME, connection=_redis())
         rq_job = q.enqueue("app.jobs.transcribe_job", job.id, audio_path, work_dir,
-                           user_id, title, separate, job_timeout=JOB_TIMEOUT)
+                           user_id, title, separate, engine, job_timeout=JOB_TIMEOUT)
         job.rq_id = rq_job.id
         db.session.commit()
     else:
-        transcribe_job(job.id, audio_path, work_dir, user_id, title, separate)
+        transcribe_job(job.id, audio_path, work_dir, user_id, title, separate, engine)
     return job
 
 
-def enqueue_ingest(user_id, url, work_dir, title, separate=False):
+def enqueue_ingest(user_id, url, work_dir, title, separate=False, engine="local"):
     """Job que descarga por URL (yt-dlp) y transcribe. La allowlist ya se validó en la ruta."""
     from flask import current_app
     from .models import Job
@@ -53,11 +54,11 @@ def enqueue_ingest(user_id, url, work_dir, title, separate=False):
     if current_app.config.get("RQ_ASYNC", True):
         q = Queue(QUEUE_NAME, connection=_redis())
         rq_job = q.enqueue("app.jobs.ingest_job", job.id, url, work_dir, user_id, title, separate,
-                           job_timeout=JOB_TIMEOUT)
+                           engine, job_timeout=JOB_TIMEOUT)
         job.rq_id = rq_job.id
         db.session.commit()
     else:
-        ingest_job(job.id, url, work_dir, user_id, title, separate)
+        ingest_job(job.id, url, work_dir, user_id, title, separate, engine)
     return job
 
 
@@ -113,14 +114,14 @@ def midi_job(job_id, midi_path, work_dir, user_id, title):
         _execute(job_id, work_dir, app, lambda: work(app))
 
 
-def ingest_job(job_id, url, work_dir, user_id, title, separate=False):
+def ingest_job(job_id, url, work_dir, user_id, title, separate=False, engine="local"):
     from flask import current_app, has_app_context
 
     def work(app):
         from .ingest import HARD_CAP_SECONDS, download_audio
         _stage(job_id, "descargando audio")
         audio_path = download_audio(url, work_dir, HARD_CAP_SECONDS)
-        return _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, separate, app)
+        return _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, separate, app, engine)
 
     if has_app_context():
         app = current_app._get_current_object()
@@ -190,24 +191,24 @@ def reap_stale(user_id, redis_conn):
     return changed
 
 
-def transcribe_job(job_id, audio_path, work_dir, user_id, title, separate=False):
+def transcribe_job(job_id, audio_path, work_dir, user_id, title, separate=False, engine="local"):
     """Corre en el worker (sin app context) o inline en tests (con app context)."""
     from flask import current_app, has_app_context
 
     if has_app_context():
         app = current_app._get_current_object()
-        return _run(job_id, audio_path, work_dir, user_id, title, separate, app)
+        return _run(job_id, audio_path, work_dir, user_id, title, separate, app, engine)
     from app import create_app
     app = create_app()
     with app.app_context():
-        return _run(job_id, audio_path, work_dir, user_id, title, separate, app)
+        return _run(job_id, audio_path, work_dir, user_id, title, separate, app, engine)
 
 
-def _transcribe_one(wav, out_dir, title, user_id, app):
+def _transcribe_one(wav, out_dir, title, user_id, app, engine="local"):
     """Transcribe un WAV de piano -> crea y devuelve un Score (sin commit)."""
     from .models import Score
     mscore = app.config.get("MSCORE_BIN")
-    xml, pdf = transcribe(wav, out_dir, title=title, mscore_bin=mscore)
+    xml, pdf = transcribe(wav, out_dir, title=title, mscore_bin=mscore, engine=engine)
     midi = os.path.join(out_dir, "notes.mid")
     has_midi = os.path.exists(midi)
     has_pdf = bool(pdf) and os.path.exists(pdf)
@@ -228,18 +229,23 @@ def _stage(job_id, text):
         db.session.commit()
 
 
-def _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, separate, app):
+def _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, separate, app, engine="local"):
     """Transcribe el piano -> un Score. Si `separate`, aísla primero el piano de la mezcla."""
+    from .transcribers import DEFAULT, label_for
     wav = audio_path
     if separate:
         _stage(job_id, "aislando el piano (roformer + demucs)")
         # cascada de alta calidad: roformer quita la voz + demucs saca el piano (lento pero mejor)
         wav = separate_piano_hq(audio_path, work_dir)
 
-    _stage(job_id, "transcribiendo piano")
+    if engine != DEFAULT:  # distinguir los resultados del A/B en el título
+        _stage(job_id, f"transcribiendo piano ({label_for(engine)})")
+        title = f"{title} · {label_for(engine)}"
+    else:
+        _stage(job_id, "transcribiendo piano")
     out_dir = os.path.join(work_dir, "out")
     os.makedirs(out_dir, exist_ok=True)
-    score = _transcribe_one(wav, out_dir, title, user_id, app)
+    score = _transcribe_one(wav, out_dir, title, user_id, app, engine)
     if wav != audio_path:
         try:
             os.remove(wav)  # limpiar el stem WAV apenas se transcribió (§6.16)
@@ -292,6 +298,6 @@ def _execute(job_id, work_dir, app, produce_scores):
         shutil.rmtree(work_dir, ignore_errors=True)  # audio/original nunca se persiste
 
 
-def _run(job_id, audio_path, work_dir, user_id, title, separate, app):
+def _run(job_id, audio_path, work_dir, user_id, title, separate, app, engine="local"):
     _execute(job_id, work_dir, app,
-             lambda: _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, separate, app))
+             lambda: _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, separate, app, engine))

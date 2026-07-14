@@ -107,7 +107,7 @@ def run():
 
     # 9. Upload: auth + magic bytes (stub del pipeline; job inline).
     import app.jobs as _jobs
-    def _fake_transcribe(src, work_dir, title="", mscore_bin=None):
+    def _fake_transcribe(src, work_dir, title="", mscore_bin=None, engine="local"):
         p = os.path.join(work_dir, "score.musicxml")
         open(p, "w").write("<score-partwise><part/></score-partwise>")
         return p, None
@@ -132,6 +132,11 @@ def run():
     assert r.status_code == 302 and "/login" in r.headers["Location"], "upload sin auth permitido"
     # aislar piano (separate=1) => usa Demucs (stub) y transcribe; todo se guarda como piano
     up(admin, b"RIFF\x24\x08\x00\x00WAVEfmt ", "mix.wav", extra={"separate": "1"})
+    # motor de transcripción: uno declarado y uno inválido (debe caer al local, sin romper)
+    r = up(admin, b"RIFF\x24\x08\x00\x00WAVEfmt ", "eng.wav", extra={"engine": "transkun"})
+    assert r.status_code == 200, "upload con motor alternativo falló"
+    r = up(admin, b"RIFF\x24\x08\x00\x00WAVEfmt ", "bad.wav", extra={"engine": "../hack"})
+    assert r.status_code == 200, "un motor inválido no cayó limpio al local"
     with app.app_context():
         insts = {s.instrument for s in db.session.scalars(db.select(Score).filter_by(user_id=a_id))}
     assert insts == {"piano"}, f"la app debería producir solo piano; hay {insts}"

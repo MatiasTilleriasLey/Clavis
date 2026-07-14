@@ -5,11 +5,16 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 PIP="${1:-.venv/bin/pip}"
 
-$PIP install -U setuptools wheel Cython
+# setuptools<81: Transkun aún importa pkg_resources, que setuptools 81+ removió.
+$PIP install -U "setuptools<81" wheel Cython
 $PIP install --index-url https://download.pytorch.org/whl/cpu torch torchaudio
 
 # Transcripción de piano (ByteDance, SOTA en piano solo) + music21 + librosa (tempo).
 $PIP install piano_transcription_inference "music21==10.5.0" "librosa==0.11.0" "scipy" "resampy"
+
+# Motor de transcripción alternativo (opcional, para A/B de calidad): Transkun, open source,
+# CLI `transkun in.wav out.mid`. Baja su checkpoint la primera vez. Ver TRANSCRIPTION_BACKENDS.md.
+$PIP install transkun
 
 # Separación de piano (opcional en la UI). Cascada de alta calidad:
 #   audio-separator (MelBand Roformer, SOTA en voz) quita la voz + Demucs saca el piano.

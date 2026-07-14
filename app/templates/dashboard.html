@@ -1,5 +1,17 @@
 {% extends "base.html" %}
 {% block title %}Mis partituras — Clavis{% endblock %}
+
+{% macro engine_select() %}
+  {% if engines and engines|length > 1 %}
+  <label class="enginesel">Motor de transcripción
+    <select name="engine">
+      {% for e in engines %}<option value="{{ e.key }}">{{ e.label }}</option>{% endfor %}
+    </select>
+    <span class="hint" style="margin:0">Probá distintos motores y compará cuál transcribe mejor tu canción.</span>
+  </label>
+  {% endif %}
+{% endmacro %}
+
 {% block content %}
 <div id="dash">
 
@@ -33,6 +45,7 @@
         <span><strong>Aislar el piano de la mezcla</strong><br>
           <span class="hint" style="margin:0">Para canciones con banda completa. Más lento (separación en cascada).</span></span>
       </label>
+      {{ engine_select() }}
       <button type="submit" class="btn btn--primary btn--block">Subir y transcribir</button>
     </form>
 
@@ -46,6 +59,7 @@
         <span><strong>Aislar el piano de la mezcla</strong><br>
           <span class="hint" style="margin:0">Para canciones con banda completa. Más lento (separación en cascada).</span></span>
       </label>
+      {{ engine_select() }}
       <button type="submit" class="btn btn--primary btn--block">Transcribir desde el link</button>
     </form>
 
@@ -179,6 +193,11 @@
   #dash button.btn--block { width:100%; }                      /* salvo el CTA */
   #dash .btn--ghost { background:#20242b; border-color:#2c313a; color:#e5e7eb; }
   #dash .btn--ghost:hover { border-color:var(--primary); color:#fff; }
+
+  .enginesel { display:block; margin:16px 0; font-size:13px; color:var(--text-2); }
+  .enginesel select { display:block; margin:6px 0; background:#0f1216; border:1px solid #2c313a;
+    color:var(--text); border-radius:8px; padding:8px 10px; font:inherit; }
+  .enginesel select:focus { outline:none; border-color:var(--primary); }
 
   .btn--block { margin-top:6px; }
   .btn--sm { padding:7px 13px; font-size:13px; border-radius:7px; }
