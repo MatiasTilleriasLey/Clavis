@@ -33,6 +33,8 @@
       <span id="status" class="muted"></span>
     </div>
 
+    <p id="diag" class="muted" style="font-size:12px; margin:8px 0 0; font-family:var(--font-mono)"></p>
+
     <div id="kbwrap"><div id="kb"></div></div>
 
     <div id="after" class="panel panel--pad" style="display:none; margin-top:12px">
@@ -228,10 +230,17 @@
 
   // --- Web MIDI ---
   let midi = null, input = null;
+  const isFirefox = /firefox/i.test(navigator.userAgent);
+  function diag(msg) { document.getElementById('diag').textContent = msg; }
   function fillDevices() {
     const sel = document.getElementById('device'); sel.innerHTML = '';
     const ins = midi ? [...midi.inputs.values()] : [];
-    if (!ins.length) { sel.innerHTML = '<option>— conectá un teclado —</option>'; bindInput(null); return; }
+    diag('Web MIDI: sí · contexto seguro: ' + (window.isSecureContext ? 'sí' : 'NO') +
+      ' · teclados: ' + ins.length +
+      (ins.length ? ' (' + ins.map(i => i.name).join(', ') + ')'
+        : (isFirefox ? ' — Firefox no detecta teclados conectados en caliente: REINICIÁ el navegador con el teclado enchufado, o usá Chrome/Edge.'
+                     : ' — ninguno: reconectá el teclado y recargá la página.')));
+    if (!ins.length) { sel.innerHTML = '<option>— sin teclado —</option>'; bindInput(null); return; }
     ins.forEach(i => { const o = document.createElement('option'); o.value = i.id; o.textContent = i.name || i.id; sel.appendChild(o); });
     bindInput(ins[0].id);
     sel.onchange = () => bindInput(sel.value);
@@ -249,7 +258,11 @@
     document.getElementById('ui').style.display = 'block';
     navigator.requestMIDIAccess({ sysex: false }).then(access => {
       midi = access; fillDevices(); midi.onstatechange = fillDevices;
-    }).catch(() => { statusEl.textContent = 'no se pudo acceder al MIDI (¿diste permiso?)'; });
+    }).catch(err => {
+      statusEl.textContent = 'no se pudo acceder al MIDI';
+      diag('Acceso MIDI denegado: ' + ((err && err.name) || '') + ' ' + ((err && err.message) || '') +
+        (isFirefox ? ' · Firefox deniega en silencio si el teclado no estaba conectado al iniciar: reiniciá el navegador con el teclado enchufado, o usá Chrome/Edge.' : ''));
+    });
   }
 })();
 </script>
