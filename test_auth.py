@@ -171,6 +171,18 @@ def run():
     with app.app_context():
         assert db.session.get(Score, sid) is not None and db.session.get(Job, jid).status == "queued"
 
+    # 11b. Regresión: A borra su partitura aunque un Job la referencie (FK jobs.score_id) — no debe dar 500.
+    with app.app_context():
+        jb = Job(user_id=a_id, status="finished", score_id=sid)
+        db.session.add(jb)
+        db.session.commit()
+        jb_id = jb.id
+    r = admin.post(f"/score/{sid}/delete")
+    assert r.status_code == 302, f"borrar partitura con job asociado falló ({r.status_code})"
+    with app.app_context():
+        assert db.session.get(Score, sid) is None, "la partitura no se borró"
+        assert db.session.get(Job, jb_id).score_id is None, "el job no quedó desligado tras borrar la partitura"
+
     # 12. Admin: gate + promover. B (normal) => 403; A (admin) => 200 y puede promover a B.
     assert beto.get("/admin").status_code == 403, "un usuario normal accedió a /admin"
     assert admin.get("/admin").status_code == 200, "el admin no accede a /admin"

@@ -334,6 +334,9 @@ def admin_smtp():
 @login_required
 def score_delete(score_id):
     score = _owned_score(score_id)
+    # desligar los jobs que apuntan a esta partitura (FK jobs.score_id) antes de borrarla,
+    # si no la eliminación viola jobs_score_id_fkey -> 500
+    Job.query.filter_by(score_id=score.id).update({"score_id": None})
     storage.delete(current_user.id, score.stored_uuid)
     db.session.delete(score)
     db.session.commit()
