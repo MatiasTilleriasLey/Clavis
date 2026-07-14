@@ -70,36 +70,100 @@
   <button id="tr-8u" class="btn btn--ghost" title="+1 octava">+8va</button>
 </div>
 
-<div id="editor" style="display:flex;border:1px solid var(--border);
-     border-radius:8px;overflow:hidden;background:#0e1013">
-  <div id="keys" style="width:56px;flex:none;overflow:hidden;background:#15181c;
-       border-right:1px solid var(--border)"></div>
-  <div id="notes" style="flex:1;overflow:auto;position:relative">
-    <div id="grid" style="position:relative"></div>
-  </div>
+<div id="editor">
+  <div id="keys"></div>
+  <div id="notes"><div id="grid" style="position:relative"></div></div>
 </div>
-<div id="velo-wrap" title="Dinámica (volumen): arrastrá la barra de una nota seleccionada para ajustar su volumen">
-  <span class="lane-lbl">Volumen</span><div id="velo"></div>
+<div id="velo-wrap" class="lane" title="Volumen (velocity): arrastrá la barra de una nota seleccionada para ajustar su volumen">
+  <div class="lane-hd"><span>Volu&shy;men</span></div>
+  <div class="lane-body"><div id="velo"></div></div>
 </div>
-<div id="pedal-wrap" title="Pedal de sustain: arrastrá en vacío para crear un pedal · arrastrá el borde para extenderlo · doble-click para borrarlo">
-  <span class="lane-lbl">Pedal</span><div id="pedal"></div>
+<div id="pedal-wrap" class="lane" title="Pedal de sustain: arrastrá en vacío para crear un pedal · borde derecho para extenderlo · doble-click para borrarlo">
+  <div class="lane-hd"><span>Pedal</span></div>
+  <div class="lane-body"><div id="pedal"></div></div>
 </div>
 </div>
 
 <style>
+  /* --- Editor estilo DAW ---------------------------------------------------- */
+  #editor-wrap {
+    --daw-panel: #16191e;      /* paneles (toolbar, headers de carril) */
+    --daw-well:  #0b0d10;      /* fondo hundido del piano-roll / carriles */
+    --daw-line:  #23272d;      /* divisiones internas */
+    --daw-sel:   #F5A623;      /* selección / cabezal (ámbar, convención DAW) */
+    --daw-dim:   #6b7280;      /* texto secundario */
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 12px;
+    box-shadow: 0 10px 30px -12px rgba(0,0,0,.6);
+  }
   #editor { height: 56vh; }
-  .tb { display:flex; gap:8px; align-items:center; margin-bottom:8px; flex-wrap:wrap; }
-  .tb--2 { padding-top:6px; border-top:1px solid var(--border); }
-  .tb .muted { font-size:13px; }
-  .tb .sep { width:1px; height:20px; background:var(--border); margin:0 2px; }
-  .btn.on { background:#f59e0b; color:#111; border-color:#f59e0b; }
-  #velo-wrap { height:66px; margin-top:6px; padding-left:56px; overflow:hidden;
-    border:1px solid var(--border); border-radius:8px; background:#0e1013; position:relative; }
-  #velo { position:relative; height:64px; }
-  #pedal-wrap { height:34px; margin-top:6px; padding-left:56px; overflow:hidden;
-    border:1px solid var(--border); border-radius:8px; background:#0e1013; position:relative; }
-  #pedal { position:relative; height:32px; }
-  .lane-lbl { position:absolute; left:6px; top:4px; font-size:10px; color:#8a8f96; z-index:3; }
+
+  /* Barras de transporte */
+  .tb {
+    display:flex; gap:6px; align-items:center; flex-wrap:wrap;
+    background: linear-gradient(180deg,#191d23,#131619);
+    border:1px solid var(--border); border-radius:10px;
+    padding:8px 10px;
+  }
+  .tb + .tb { margin-top:8px; }
+  .tb--2 { background: linear-gradient(180deg,#15181d,#111417); }
+  .tb .muted { font-size:11px; text-transform:uppercase; letter-spacing:.08em;
+    font-family:var(--font-mono); color:var(--daw-dim); }
+  .tb .sep { width:1px; height:22px; background:var(--border); margin:0 4px; }
+
+  /* Botones compactos (solo dentro del editor, no toca el resto de la app) */
+  #editor-wrap .btn {
+    padding:6px 10px; font-size:13px; font-weight:500; border-radius:7px;
+    line-height:1.2; transition:background .12s, border-color .12s, color .12s;
+  }
+  #editor-wrap .btn--ghost {
+    background:#20242b; border-color:#2c313a; color:#e5e7eb;
+  }
+  #editor-wrap .btn--ghost:hover { background:#272c34; border-color:var(--primary); color:#fff; }
+  #editor-wrap .btn--primary { box-shadow:0 2px 10px -2px rgba(45,212,191,.5); }
+  #editor-wrap .btn.on {
+    background:var(--daw-sel); color:#111; border-color:var(--daw-sel);
+    box-shadow:0 0 0 1px var(--daw-sel), 0 0 12px -2px var(--daw-sel);
+  }
+  #editor-wrap select, #editor-wrap input[type=number] {
+    background:#0f1216; border:1px solid #2c313a; color:#e5e7eb;
+    border-radius:7px; padding:5px 8px; font:inherit; font-size:13px;
+  }
+  #editor-wrap select:focus, #editor-wrap input[type=number]:focus { outline:none; border-color:var(--primary); }
+  #status { font-family:var(--font-mono); font-size:12px; color:var(--primary); }
+
+  /* Piano-roll */
+  #editor {
+    display:flex; border:1px solid var(--border); border-radius:10px;
+    overflow:hidden; background:var(--daw-well); margin-top:8px;
+    box-shadow: inset 0 2px 12px -6px #000;
+  }
+  #keys { width:56px; flex:none; overflow:hidden;
+    background:linear-gradient(90deg,#1b1f25,#14171b); border-right:1px solid var(--border); }
+  #notes { flex:1; overflow:auto; position:relative; }
+
+  /* Carriles (volumen / pedal) con header de panel a la izquierda */
+  .lane { margin-top:8px; display:flex; border:1px solid var(--border);
+    border-radius:10px; overflow:hidden; background:var(--daw-well); }
+  .lane-hd { width:56px; flex:none; background:linear-gradient(90deg,#1b1f25,#14171b);
+    border-right:1px solid var(--border); display:flex; align-items:center;
+    justify-content:center; text-align:center; }
+  .lane-hd span { font-family:var(--font-mono); font-size:9px; letter-spacing:.06em;
+    text-transform:uppercase; color:var(--daw-dim); line-height:1.2; }
+  .lane-body { flex:1; overflow:hidden; position:relative; }
+  #velo-wrap .lane-body { height:66px; }
+  #velo { position:relative; height:66px; }
+  #pedal-wrap .lane-body { height:34px; }
+  #pedal { position:relative; height:34px; }
+
+  /* Scrollbars oscuros */
+  #notes::-webkit-scrollbar { width:12px; height:12px; }
+  #notes::-webkit-scrollbar-track { background:#0b0d10; }
+  #notes::-webkit-scrollbar-thumb { background:#2c313a; border-radius:6px; border:3px solid #0b0d10; }
+  #notes::-webkit-scrollbar-thumb:hover { background:#3a4150; }
+
   #editor-wrap:fullscreen { background:var(--bg); padding:14px; overflow:auto; }
   #editor-wrap:fullscreen #editor { height: calc(100vh - 250px); }
 </style>
@@ -125,18 +189,21 @@
   const noteName = p => NAMES[((p % 12) + 12) % 12] + (Math.floor(p / 12) - 1);
 
   // cabezal + regla clickeable (seek) + overlay de loop
+  const SEL = '#F5A623';   // ámbar de selección/cabezal (convención DAW)
   const playhead = document.createElement('div');
-  playhead.style.cssText = 'position:absolute;top:0;width:2px;background:#f59e0b;pointer-events:none;z-index:6';
+  playhead.style.cssText = 'position:absolute;top:0;width:2px;background:' + SEL +
+    ';box-shadow:0 0 8px 0 ' + SEL + ';pointer-events:none;z-index:6';
   const loopEl = document.createElement('div');
-  loopEl.style.cssText = 'position:absolute;top:0;background:rgba(245,158,11,0.10);' +
-    'border-left:1px solid #f59e0b;border-right:1px solid #f59e0b;pointer-events:none;z-index:2;display:none';
+  loopEl.style.cssText = 'position:absolute;top:0;background:rgba(245,166,35,0.10);' +
+    'border-left:1px solid ' + SEL + ';border-right:1px solid ' + SEL + ';pointer-events:none;z-index:2;display:none';
   const tip = document.createElement('div');
-  tip.style.cssText = 'position:fixed;background:#111;color:#eee;font-size:11px;padding:2px 6px;' +
-    'border-radius:4px;pointer-events:none;z-index:99;display:none';
+  tip.style.cssText = 'position:fixed;background:#0b0d10;color:#e5e7eb;font-size:11px;padding:3px 7px;' +
+    'border:1px solid #2c313a;border-radius:6px;font-family:var(--font-mono);' +
+    'box-shadow:0 4px 14px -4px #000;pointer-events:none;z-index:99;display:none';
   document.body.appendChild(tip);
   const ruler = document.createElement('div');
   ruler.style.cssText = 'position:absolute;top:0;left:0;height:' + RULER_H +
-    'px;background:#1a1d21;border-bottom:1px solid #2a2e33;cursor:pointer;z-index:4';
+    'px;background:linear-gradient(180deg,#1c2026,#15181d);border-bottom:1px solid #2a2e33;cursor:pointer;z-index:4';
   ruler.title = 'Click para elegir desde dónde reproducir';
   ruler.addEventListener('mousedown', e => {
     e.stopPropagation();
@@ -175,11 +242,12 @@
     const spacer = document.createElement('div'); spacer.style.height = RULER_H + 'px';
     inner.appendChild(spacer);
     for (let p = PHI; p >= PLO; p--) {
-      const k = document.createElement('div'), black = BLACK[p % 12];
-      k.style.cssText = `height:${ROW}px;box-sizing:border-box;border-bottom:1px solid #22262b;` +
-        `background:${black ? '#1b1e22' : '#23272c'};color:#8a8f96;font-size:9px;` +
-        `padding-left:4px;line-height:${ROW}px`;
-      if (p % 12 === 0) k.textContent = 'C' + (p / 12 - 1);
+      const k = document.createElement('div'), black = BLACK[p % 12], isC = (p % 12 === 0);
+      const bg = black ? 'linear-gradient(90deg,#0d0f12,#15181d)' : 'linear-gradient(90deg,#20242b,#2a2f37)';
+      k.style.cssText = `height:${ROW}px;box-sizing:border-box;border-bottom:1px solid ${black ? '#0a0c0f' : '#1a1d22'};` +
+        `background:${bg};color:${isC ? '#2DD4BF' : '#7c828c'};font-family:var(--font-mono);font-size:9px;` +
+        `text-align:right;padding-right:5px;line-height:${ROW}px;font-weight:${isC ? 600 : 400}`;
+      if (isC) k.textContent = 'C' + (p / 12 - 1);
       inner.appendChild(k);
     }
     keysEl.appendChild(inner);
@@ -193,20 +261,24 @@
   }
   function noteEl(n) {
     const el = document.createElement('div');
-    el.style.cssText = 'position:absolute;background:#2DD4BF;border:1px solid #0f766e;' +
-      'border-radius:2px;box-sizing:border-box;cursor:grab;opacity:' + opacityFor(n.velocity);
+    el.style.cssText = 'position:absolute;background:linear-gradient(180deg,#5eead4,#2DD4BF 45%,#17a394);' +
+      'border:1px solid #0b5c53;border-top-color:#7ff0e0;border-radius:3px;box-sizing:border-box;' +
+      'cursor:grab;box-shadow:0 1px 2px rgba(0,0,0,.45);opacity:' + opacityFor(n.velocity);
     place(el, n);
-    if (selection.has(n)) el.style.outline = '2px solid #f59e0b';
+    if (selection.has(n)) selStyle(el, true);
     el.addEventListener('mousedown', e => startDrag(e, n, el));
     el.addEventListener('dblclick', e => { e.stopPropagation(); removeNote(n, el); });
     n.el = el; return el;
   }
 
-  // --- selección (resalta la nota y su barra de volumen) ---
+  // --- selección (resalta la nota y su barra de volumen con glow ámbar) ---
+  function selStyle(el, on) {
+    el.style.outline = on ? '1.5px solid ' + SEL : '';
+    el.style.boxShadow = on ? '0 0 0 1px ' + SEL + ', 0 0 10px -1px ' + SEL : '0 1px 2px rgba(0,0,0,.45)';
+  }
   function selMark(n, on) {
-    const o = on ? '2px solid #f59e0b' : '';
-    if (n.el) n.el.style.outline = o;
-    if (n.velEl) { n.velEl.style.outline = o; n.velEl.style.opacity = on ? '1' : '.75'; }
+    if (n.el) selStyle(n.el, on);
+    if (n.velEl) { n.velEl.style.outline = on ? '1.5px solid ' + SEL : ''; n.velEl.style.opacity = on ? '1' : '.7'; }
   }
   function selAdd(n) { selection.add(n); selMark(n, true); }
   function selDel(n) { selection.delete(n); selMark(n, false); }
@@ -255,9 +327,17 @@
     const b = gridBeats(), subPx = b ? beatPx * b : 0;
     const vline = (px, color) =>
       'repeating-linear-gradient(90deg,' + color + ' 0,' + color + ' 1px,transparent 1px,transparent ' + px + 'px)';
-    const layers = [vline(beatPx * 4, '#3a3f47'), vline(beatPx, '#262a30')];
-    if (subPx >= 4) layers.push(vline(subPx, '#20242a'));
-    layers.push('repeating-linear-gradient(0deg,#181b1f 0,#181b1f 1px,transparent 1px,transparent ' + (ROW * 12) + 'px)');
+    const layers = [];
+    layers.push(vline(beatPx * 4, '#41474f'));        // línea de compás (más marcada)
+    layers.push(vline(beatPx, '#242930'));            // beat
+    if (subPx >= 4) layers.push(vline(subPx, '#191d22'));   // subdivisión
+    // sombreado de filas por semitono (teclas negras más oscuras, Do con leve tinte) — look piano-roll
+    const stops = [];
+    for (let p = PHI, y = RULER_H; p >= PLO; p--, y += ROW) {
+      const c = (p % 12 === 0) ? '#13181c' : (BLACK[((p % 12) + 12) % 12] ? '#0a0c0f' : '#0f1216');
+      stops.push(c + ' ' + y + 'px', c + ' ' + (y + ROW) + 'px');
+    }
+    layers.push('linear-gradient(180deg,#0f1216 0,#0f1216 ' + RULER_H + 'px,' + stops.join(',') + ')');
     return layers.join(',');
   }
 
@@ -271,7 +351,7 @@
     if (barPx > 24) for (let i = 0, x = 0; x < width; i++, x += barPx) {
       const s = document.createElement('div');
       s.textContent = i + 1;
-      s.style.cssText = 'position:absolute;left:' + (x + 3) + 'px;top:2px;font-size:9px;color:#6b7280';
+      s.style.cssText = 'position:absolute;left:' + (x + 4) + 'px;top:3px;font-size:9px;color:#8b929c;font-family:var(--font-mono)';
       ruler.appendChild(s);
     }
     grid.appendChild(ruler);
@@ -296,8 +376,8 @@
     const b = document.createElement('div');
     b.style.cssText = 'position:absolute;bottom:0;left:' + (n.start * PPS) + 'px;width:' +
       Math.max(2, (n.end - n.start) * PPS) + 'px;height:' + Math.max(2, n.velocity / 127 * VH) +
-      'px;background:#2DD4BF;opacity:' + (sel ? '1' : '.75') + ';cursor:ns-resize' +
-      (sel ? ';outline:2px solid #f59e0b' : '');
+      'px;background:linear-gradient(180deg,#5eead4,#17a394);border-radius:2px 2px 0 0;opacity:' +
+      (sel ? '1' : '.7') + ';cursor:ns-resize' + (sel ? ';outline:1.5px solid ' + SEL : '');
     b.addEventListener('mousedown', e => {
       e.preventDefault(); e.stopPropagation();
       if (selection.size && !selection.has(n)) { statusEl.textContent = 'seleccioná esa nota para cambiar su volumen'; return; }
@@ -329,9 +409,10 @@
     ped.style.transform = 'translateX(' + (-notesEl.scrollLeft) + 'px)';
     pedals.forEach(p => {
       const b = document.createElement('div');
-      b.style.cssText = 'position:absolute;top:3px;bottom:3px;left:' + (p.start * PPS) + 'px;width:' +
-        Math.max(3, (p.end - p.start) * PPS) + 'px;background:#a78bfa;opacity:.85;border:1px solid #7c3aed;' +
-        'border-radius:3px;box-sizing:border-box;cursor:grab';
+      b.style.cssText = 'position:absolute;top:4px;bottom:4px;left:' + (p.start * PPS) + 'px;width:' +
+        Math.max(3, (p.end - p.start) * PPS) + 'px;background:linear-gradient(180deg,#c4b5fd,#8b5cf6);' +
+        'border:1px solid #6d28d9;border-top-color:#ddd6fe;border-radius:4px;box-sizing:border-box;' +
+        'cursor:grab;box-shadow:0 1px 3px rgba(0,0,0,.4)';
       b.title = 'Pedal ' + p.start.toFixed(2) + '–' + p.end.toFixed(2) + 's · borde derecho = extender · doble-click = borrar';
       b.addEventListener('mousedown', e => startPedDrag(e, p, b));
       b.addEventListener('dblclick', e => { e.stopPropagation(); pushHistory(); pedals = pedals.filter(x => x !== p); pedalRender(); dirty(); statusEl.textContent = 'pedal borrado'; });
