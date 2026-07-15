@@ -85,7 +85,7 @@
   const nowT = () => (playing && !waitMode) ? songT + (performance.now() / 1000 - wall0) * speed : songT;
 
   // ---- modo "esperar tecla": pasos (acordes) que se completan al tocar las teclas correctas ----
-  let waitMode = false, steps = [], curStep = 0, waiting = false;
+  let waitMode = false, steps = [], curStep = 0, waiting = false, lastFrame = 0;
   const mstatus = document.getElementById('mstatus');
   function buildSteps() {                 // agrupar notas por onset (tolerancia = acorde)
     steps = [];
@@ -160,32 +160,43 @@
       sfp.loadSamples(seq).then(() => { try { sfp.start(seq); } catch (e) {} });
     } catch (e) {}
   }
-  function gotoStep(i) {                   // posicionar el playhead en el paso i, esperando su tecla
-    curStep = i;
-    if (i < steps.length) { steps[i].hit = new Set(); songT = steps[i].t; waiting = true; }
-  }
   function startWait() {
     if (!steps.length) return;
-    let i = songT >= songDur ? 0 : steps.findIndex(s => s.t >= songT - 0.001);
-    if (i < 0) i = 0;
-    gotoStep(i);
-    playing = true; ensureMIDI(); setBtn(); waitRender();
+    if (songT >= songDur) { curStep = 0; songT = 0; }
+    else { curStep = steps.findIndex(s => s.t >= songT - 0.001); if (curStep < 0) curStep = steps.length; }
+    if (curStep < steps.length) steps[curStep].hit = new Set();
+    playing = true; waiting = false; lastFrame = 0; ensureMIDI(); setBtn(); waitLoop();
   }
-  function waitRender() {                  // solo dibuja/actualiza; el avance lo dispara la tecla, no el tiempo
+  function waitLoop() {                    // las notas CAEN; al llegar a la línea se congela hasta tocarla
     if (!playing || !waitMode) return;
-    if (curStep >= steps.length) { playing = false; waiting = false; setBtn(); mstatus.textContent = '¡completado! 🎉'; draw(songDur); return; }
+    const now = performance.now() / 1000, dt = lastFrame ? Math.min(now - lastFrame, 0.1) : 0; lastFrame = now;
+    if (curStep >= steps.length) {         // ya tocaste todo: dejar caer la cola y terminar
+      songT = Math.min(songT + dt * speed, songDur); draw(songT);
+      if (songT >= songDur) { playing = false; setBtn(); mstatus.textContent = '¡completado! 🎉'; return; }
+      raf = requestAnimationFrame(waitLoop); return;
+    }
+    const target = steps[curStep].t;
+    if (!waiting) {                        // caer hasta que la nota llegue a la línea
+      songT = Math.min(target, songT + dt * speed);
+      if (songT >= target - 0.0005) { songT = target; waiting = true; }
+    }
     const st = steps[curStep];
-    mstatus.textContent = 'tocá: ' + [...st.need].sort((a, b) => a - b).map(noteName).join(' ') + '  (' + st.hit.size + '/' + st.need.size + ')';
+    mstatus.textContent = waiting
+      ? ('tocá: ' + [...st.need].sort((a, b) => a - b).map(noteName).join(' ') + '  (' + st.hit.size + '/' + st.need.size + ')')
+      : '';
     draw(songT);
-    raf = requestAnimationFrame(waitRender);
+    raf = requestAnimationFrame(waitLoop);
   }
   function onMidiNote(pitch, vel) {
     monitorNote(pitch, vel);
-    if (!waitMode || !playing || curStep >= steps.length) return;
+    if (!waitMode || !waiting || curStep >= steps.length) return;   // solo cuenta cuando la nota está en la línea
     const st = steps[curStep];
     if (st.need.has(pitch)) {
       st.hit.add(pitch);
-      if (st.hit.size >= st.need.size) gotoStep(curStep + 1);   // acorde completo => siguiente nota
+      if (st.hit.size >= st.need.size) {   // acorde completo => seguir cayendo hacia la siguiente
+        waiting = false; curStep++;
+        if (curStep < steps.length) steps[curStep].hit = new Set();
+      }
     }
   }
   const NOTE_NAMES = ['C', 'C#', 'D', 'D#', 'E', 'F', 'F#', 'G', 'G#', 'A', 'A#', 'B'];
