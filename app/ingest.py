@@ -62,3 +62,30 @@ def download_audio(url, work_dir, max_seconds=HARD_CAP_SECONDS):
     if not mp3s:
         raise RuntimeError("descarga vacía o rechazada por duración")
     return os.path.join(work_dir, mp3s[0])
+
+
+# 720p: el teclado enderezado se procesa a 1280 px de ancho (~24 px por tecla blanca), así que
+# bajar 4K sería tirar ancho de banda, disco y tiempo de decodificación para downscalear después.
+VIDEO_MAX_HEIGHT = 720
+
+# H.264 ANTES que la resolución, y no es una preferencia estética: el ffmpeg que trae OpenCV no
+# decodifica AV1, y YouTube hoy sirve AV1 por defecto. Sin esto se baja el video entero, OpenCV
+# lee 0 frames y la transcripción cae en silencio al audio solo. Verificado contra YouTube real.
+VIDEO_FORMAT_SORT = f"vcodec:h264,res:{VIDEO_MAX_HEIGHT}"
+
+
+def download_video(url, work_dir, max_seconds=HARD_CAP_SECONDS):
+    """Descarga el video CON su audio, para transcripción asistida por video. Un solo archivo
+    hace de fuente de audio y de imagen, así los dos quedan sincronizados por construcción (que
+    es lo que la fusión necesita). Mismos controles que download_audio: nombre UUID (§6.6),
+    match-filter por duración (§6.26) y timeout (§6.7). Devuelve el path del video."""
+    stem = uuid.uuid4().hex
+    tmpl = os.path.join(work_dir, stem + ".%(ext)s")
+    _ytdlp(["--match-filter", f"duration < {int(max_seconds)}",
+            "-f", "bv*+ba/b", "-S", VIDEO_FORMAT_SORT,
+            "--merge-output-format", "mp4", "-o", tmpl, url], DOWNLOAD_TIMEOUT)
+    # por prefijo, no por extensión: según el formato, yt-dlp puede dejar mp4/mkv/webm
+    found = [f for f in os.listdir(work_dir) if f.startswith(stem)]
+    if not found:
+        raise RuntimeError("descarga vacía o rechazada por duración")
+    return os.path.join(work_dir, found[0])

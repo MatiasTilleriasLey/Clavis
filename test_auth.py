@@ -107,7 +107,7 @@ def run():
 
     # 9. Upload: auth + magic bytes (stub del pipeline; job inline).
     import app.jobs as _jobs
-    def _fake_transcribe(src, work_dir, title="", mscore_bin=None, engine="local", onset_threshold=None):
+    def _fake_transcribe(src, work_dir, title="", **kw):  # **kw: video_path, stage, engine…
         p = os.path.join(work_dir, "score.musicxml")
         open(p, "w").write("<score-partwise><part/></score-partwise>")
         return p, None
@@ -137,6 +137,13 @@ def run():
     assert r.status_code == 200, "upload con motor alternativo falló"
     r = up(admin, b"RIFF\x24\x08\x00\x00WAVEfmt ", "bad.wav", extra={"engine": "../hack"})
     assert r.status_code == 200, "un motor inválido no cayó limpio al local"
+    # video opcional del teclado (VPT): también por magic bytes, no por extensión
+    r = up(admin, b"RIFF\x24\x08\x00\x00WAVEfmt ", "vpt.wav",
+           extra={"video": (BytesIO(b"<?xml version='1.0'?><x/>"), "clip.mp4")})
+    assert b"no parece un video" in r.data, "aceptó el video por extensión, no por contenido"
+    r = up(admin, b"RIFF\x24\x08\x00\x00WAVEfmt ", "vpt2.wav",
+           extra={"video": (BytesIO(b"\x00\x00\x00\x20ftypisom\x00\x00\x00\x00"), "clip.mp4")})
+    assert b"no parece un video" not in r.data, "rechazó un MP4 válido"
     with app.app_context():
         insts = {s.instrument for s in db.session.scalars(db.select(Score).filter_by(user_id=a_id))}
     assert insts == {"piano"}, f"la app debería producir solo piano; hay {insts}"
@@ -158,6 +165,31 @@ def run():
         assert jobs_before == db.session.scalar(db.select(db.func.count()).select_from(Job))
     r = app.test_client().post("/ingest", data={"url": "https://youtu.be/x"})
     assert r.status_code == 302 and "/login" in r.headers["Location"], "ingest sin auth permitido"
+
+    # 10b. Link + "usar el video": baja el video (no solo el audio) y lo pasa a la transcripción.
+    import app.ingest as _ing
+    got = {}
+    _ing.probe = lambda url: (30, "Video de piano")
+    _ing.download_audio = lambda *a, **k: got.setdefault("audio", True)
+    def _fake_dl_video(url, work_dir, max_seconds=None):
+        got["video"] = True
+        p = os.path.join(work_dir, "clip.mp4"); open(p, "wb").write(b"x"); return p
+    _ing.download_video = _fake_dl_video
+    _jobs.normalize_audio = lambda src, dst: open(dst, "wb").write(b"x")
+    def _spy_transcribe(src, work_dir, title="", **kw):
+        got["video_path"] = kw.get("video_path")
+        p = os.path.join(work_dir, "score.musicxml")
+        open(p, "w").write("<score-partwise><part/></score-partwise>")
+        return p, None
+    _jobs.transcribe = _spy_transcribe
+    admin.post("/ingest", data={"url": "https://youtu.be/x", "video": "1"}, follow_redirects=True)
+    assert got.get("video") and "audio" not in got, "con el video pedido no debe bajar solo el audio"
+    assert got.get("video_path", "").endswith(".mp4"), "el video no llegó a la transcripción"
+    got.clear()
+    admin.post("/ingest", data={"url": "https://youtu.be/x"}, follow_redirects=True)
+    assert got.get("audio") and "video" not in got, "sin pedirlo no debe bajar el video"
+    assert got.get("video_path") is None, "sin video, la transcripción no debe recibir uno"
+    _jobs.transcribe = _fake_transcribe
 
     # 11. IDOR: B no accede a las partituras/jobs de A.
     beto = app.test_client()

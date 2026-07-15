@@ -3,6 +3,7 @@ Todo ocurre dentro de un work_dir efímero.
 
 Los imports de los modelos (piano_transcription_inference/music21/librosa) son perezosos:
 cargar el checkpoint es lento y no debe pesar en el arranque del web app."""
+import logging
 import os
 import subprocess
 import sys
@@ -272,11 +273,14 @@ def separate_stems(audio_path, work_dir, stems):
     return result
 
 
-def transcribe(audio_path, work_dir, title="", mscore_bin=None, engine="local", onset_threshold=None):
+def transcribe(audio_path, work_dir, title="", mscore_bin=None, engine="local", onset_threshold=None,
+               video_path=None, stage=None):
     """Audio de piano -> (musicxml, pdf). Genera la notación con MuseScore importando el MIDI
     (auto-separa manos, cuantiza y detecta armadura/tempo mucho mejor que music21).
     `engine`: motor de transcripción (ver app/transcribers.py). `onset_threshold`: solo ByteDance,
-    sube el umbral para reducir notas fantasma. Requiere MuseScore. El MIDI queda en
+    sube el umbral para reducir notas fantasma. `video_path`: video del teclado sincronizado con
+    el audio; si viene, corrige onset/offset por visión (app/video_transcription.py). `stage`:
+    callable opcional para reportar la fase al job. Requiere MuseScore. El MIDI queda en
     work_dir/notes.mid (se persiste para descarga)."""
     wav = os.path.join(work_dir, "norm.wav")
     midi = os.path.join(work_dir, "notes.mid")
@@ -287,6 +291,19 @@ def transcribe(audio_path, work_dir, title="", mscore_bin=None, engine="local", 
     audio_to_midi_piano(wav, midi, engine, onset_threshold)
     bpm = estimate_tempo(wav)
     _consolidate_midi(midi, bpm)
+
+    if video_path:
+        # Corrección visual ANTES de MuseScore: el usuario ve la partitura ya corregida y el
+        # editor piano-roll solo retoca. El video es una ayuda, nunca un requisito: si falla
+        # (sin cv2, no calibra, timeout) seguimos con el MIDI de audio como hasta ahora.
+        if stage:
+            stage("analizando el video del teclado")
+        try:
+            from .video_transcription import correct_midi
+            correct_midi(midi, video_path)
+        except Exception:
+            logging.getLogger(__name__).warning("análisis de video falló; se usa solo el audio",
+                                                exc_info=True)
 
     if not mscore_bin:
         raise RuntimeError("MuseScore es requerido para generar la partitura (configurar MSCORE_BIN)")

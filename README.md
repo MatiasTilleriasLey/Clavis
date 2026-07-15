@@ -48,6 +48,15 @@ para correr en **red local / VPN privada**.
 - **Aislar el piano** (opcional): para canciones con banda completa, separa el piano de la mezcla
   con una **cascada de modelos** (MelBand Roformer quita la voz + Demucs extrae el piano) antes
   de transcribir, priorizando calidad sobre velocidad.
+- **Transcripción asistida por video** (opcional): si subís un **video del teclado** junto al audio
+  (cámara fija, teclado a la vista, mismo take), o marcás *"usar el video"* al pegar un **link**
+  (se descarga el video además del audio, así van sincronizados por construcción), se analiza por
+  visión computacional (OpenCV, sin GPU) para corregir el **onset, offset y duración** de cada
+  nota. Es el punto flojo
+  de transcribir solo por audio: el modelo no distingue "la tecla sigue abajo" de "el sonido sigue
+  por el pedal", y estira las notas. El video sí ve cuándo se soltó la tecla. Fusión: el audio
+  manda en pitch/velocity y cubre lo que la mano tapa; el video manda en los tiempos. La partitura
+  llega al editor ya corregida.
 - **Salidas**: render interactivo en el navegador (OpenSheetMusicDisplay), **reproducción con
   soundfont de piano** en el navegador, y descargas en **PDF**, **MusicXML** y **MIDI**.
 - **Editor de notas (piano-roll tipo DAW)**: corregí la transcripción sin salir del navegador —
@@ -74,15 +83,21 @@ Landing pública (dentro de la VPN)
         ▼
 Dashboard  ──► subir archivo  ó  pegar link (YouTube/IG/TikTok)  ó  subir un MIDI
         │            │
-        │            ├─ [link] validar dominio (allowlist) → yt-dlp descarga solo audio
+        │            ├─ [link] validar dominio (allowlist) → yt-dlp descarga solo audio, o el
+        │            │         video entero (720p, H.264) si pediste usar el video
         │            │         (tope duro 60 min server-side; aviso a los 15 min)
         │            ▼
         │      ffmpeg normaliza el audio
         │            │
         │            ├─ [opción "aislar piano"] cascada Roformer + Demucs → stem de piano
         │            ▼
-        │      piano_transcription_inference (audio → MIDI)  →  music21/librosa (tonalidad,
-        │            tempo, gran pentagrama, metadata)  →  MuseScore (MusicXML + PDF)
+        │      piano_transcription_inference (audio → MIDI)
+        │            │
+        │            ├─ [si subiste un video del teclado] OpenCV lo analiza y corrige
+        │            │         onset/offset (el video ve soltar la tecla; el pedal, no)
+        │            ▼
+        │      music21/librosa (tonalidad, tempo, gran pentagrama, metadata)
+        │            →  MuseScore (MusicXML + PDF)
         ▼
 Partitura guardada por usuario  ──►  ver (OSMD) · reproducir (soundfont) · descargar
         │         PDF/MusicXML/MIDI · editar datos      (el audio original se borra siempre)
@@ -92,7 +107,8 @@ Partitura guardada por usuario  ──►  ver (OSMD) · reproducir (soundfont) 
 
 Los pasos pesados (separación, transcripción, MuseScore) corren en **background** vía Redis/RQ,
 con un único worker → como mucho un trabajo pesado a la vez (la máquina no tiene GPU dedicada). El
-frontend muestra la etapa actual (descargando / separando / transcribiendo) y permite cancelar.
+frontend muestra la etapa actual (descargando / separando / transcribiendo / analizando el video)
+y permite cancelar.
 Los jobs cuyo worker muere se reconcilian al abrir el dashboard (no quedan colgados "en proceso").
 
 ## Herramientas y por qué cada una
@@ -107,6 +123,7 @@ Los jobs cuyo worker muere se reconcilian al abrir el dashboard (no quedan colga
 | Audio | **ffmpeg** | Normalización a WAV mono |
 | Aislar piano | **MelBand Roformer** (audio-separator) + **Demucs** (`htdemucs_6s`), CPU | Cascada que quita la voz y extrae el piano de una mezcla (opcional) |
 | Audio → MIDI | **piano_transcription_inference** (ByteDance, PyTorch) | Transcripción de piano SOTA |
+| Video → onset/offset | **OpenCV** (CV clásica: homografía + resta de fondo) | Ve cuándo se suelta la tecla, que el pedal le esconde al audio (opcional) |
 | MIDI → partitura | **music21** + **librosa** + **pretty_midi** | Tonalidad, tempo, gran pentagrama, edición de notas/pedal → MusicXML |
 | Partitura → PDF | **MuseScore 4 CLI** (headless) | Import de MIDI y export a MusicXML/PDF (incluye notación de pedal) |
 | Editor de notas | Piano-roll propio (Canvas/DOM, sin dependencias) | Corrección tipo DAW: notas, volumen, pedal, dividir/fusionar, cuantizar, mutear/solo |
@@ -152,8 +169,9 @@ python3 -m venv .venv
 .venv/bin/pip install -r requirements.txt
 
 # 3) Dependencias ML pesadas: torch (CPU), piano_transcription_inference + su checkpoint,
-#    Demucs y audio-separator (modelo MelBand Roformer) para aislar el piano, yt-dlp,
-#    MuseScore 4 y el soundfont de piano. El script baja/extrae todo sin necesidad de root.
+#    Demucs y audio-separator (modelo MelBand Roformer) para aislar el piano, OpenCV para
+#    la transcripción asistida por video, yt-dlp, MuseScore 4 y el soundfont de piano.
+#    El script baja/extrae todo sin necesidad de root.
 scripts/install_ml.sh
 #    Copiá el MSCORE_BIN que imprime al final a tu archivo .env
 
@@ -223,6 +241,7 @@ export SECRET_KEY=x DATABASE_URL=sqlite:// REDIS_URL=redis://localhost:6379/0
 .venv/bin/python test_ingest.py    # allowlist de dominios (anti-SSRF)
 .venv/bin/python test_pipeline.py  # audio → MusicXML (requiere deps ML)
 .venv/bin/python test_pdf.py       # MusicXML → PDF (requiere MuseScore)
+.venv/bin/python test_video.py     # transcripción visual: calibración, eventos, fusión
 ```
 
 ## Licencia

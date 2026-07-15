@@ -57,6 +57,13 @@
         <span><strong>Aislar el piano de la mezcla</strong><br>
           <span class="hint" style="margin:0">Para canciones con banda completa. Más lento (separación en cascada).</span></span>
       </label>
+      <label class="filebtn">
+        <input type="file" name="video" accept=".mp4,.mov,.m4v,.webm,.mkv">
+        <span class="filebtn__ico">🎥</span><span class="filebtn__txt">Subí también un video con el teclado visible (opcional, mejora precisión)…</span>
+      </label>
+      <p class="hint">Solo para piano. Cámara fija, teclado entero a la vista, del mismo take que el
+        audio — si grabaste un video, podés subir el mismo archivo en los dos campos. Viendo cuándo
+        se suelta la tecla corregimos las duraciones que el pedal de sustain confunde.</p>
       {{ engine_select() }}
       {{ sensitivity_select() }}
       <button type="submit" class="btn btn--primary btn--block">Subir y transcribir</button>
@@ -65,12 +72,21 @@
     <form class="pane" id="pane-link" method="post" action="{{ url_for('main.ingest') }}">
       <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
       <h3>Transcribir desde un link</h3>
-      <p class="hint">YouTube · Instagram · TikTok. Descargamos solo el audio.</p>
+      <p class="hint">YouTube · Instagram · TikTok. Descargamos solo el audio, salvo que pidas
+        usar el video.</p>
       <input type="url" name="url" placeholder="https://www.youtube.com/watch?v=…" required>
       <label class="optrow">
         <input type="checkbox" name="separate" value="1">
         <span><strong>Aislar el piano de la mezcla</strong><br>
           <span class="hint" style="margin:0">Para canciones con banda completa. Más lento (separación en cascada).</span></span>
+      </label>
+      <label class="optrow">
+        <input type="checkbox" name="video" value="1">
+        <span><strong>Usar el video para mejorar la precisión</strong><br>
+          <span class="hint" style="margin:0">Solo si el video muestra un teclado real con cámara
+            fija (no sirve con animaciones tipo Synthesia ni con planos de concierto). Viendo cuándo
+            se suelta la tecla corregimos las duraciones que el pedal confunde. Descarga el video
+            entero, no solo el audio: más lento.</span></span>
       </label>
       {{ engine_select() }}
       {{ sensitivity_select() }}

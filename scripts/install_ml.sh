@@ -16,6 +16,10 @@ $PIP install piano_transcription_inference "music21==10.5.0" "librosa==0.11.0" "
 # CLI `transkun in.wav out.mid`. Baja su checkpoint la primera vez. Ver TRANSCRIPTION_BACKENDS.md.
 $PIP install transkun
 
+# Transcripción visual de piano (opcional en la UI): analiza un video del teclado para corregir
+# onset/offset. CV clásica, sin GPU. headless = sin las deps de GUI (Qt/GTK), es un server.
+$PIP install "opencv-python-headless==4.11.0.86"
+
 # Separación de piano (opcional en la UI). Cascada de alta calidad:
 #   audio-separator (MelBand Roformer, SOTA en voz) quita la voz + Demucs saca el piano.
 $PIP install demucs "audio-separator"

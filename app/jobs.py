@@ -9,7 +9,8 @@ from rq import Queue
 
 from . import storage
 from .extensions import db
-from .pipeline import separate_piano_hq, transcribe  # patcheable en tests
+from .pipeline import (normalize_audio, separate_piano_hq,  # patcheable en tests
+                       transcribe)
 
 QUEUE_NAME = "clavis"
 JOB_TIMEOUT = 1800  # 30 min duro por job (defensa DoS, refuerza el tope de duración del paso 12)
@@ -20,10 +21,12 @@ def _redis():
     return Redis.from_url(current_app.config["REDIS_URL"])
 
 
-def enqueue_transcription(user_id, audio_path, work_dir, title, separate=False, engine="local", onset=None):
+def enqueue_transcription(user_id, audio_path, work_dir, title, separate=False, engine="local",
+                          onset=None, video_path=None):
     """Crea el Job en DB y lo encola (o lo corre inline si RQ_ASYNC=False, para tests).
     `separate`: si True, aísla el piano de la mezcla (Demucs) antes de transcribir.
-    `engine`: motor de transcripción (app/transcribers.py). `onset`: umbral de onsets (ByteDance)."""
+    `engine`: motor de transcripción (app/transcribers.py). `onset`: umbral de onsets (ByteDance).
+    `video_path`: video opcional del teclado para corregir onset/offset por visión."""
     from flask import current_app
     from .models import Job
 
@@ -33,17 +36,20 @@ def enqueue_transcription(user_id, audio_path, work_dir, title, separate=False, 
 
     if current_app.config.get("RQ_ASYNC", True):
         q = Queue(QUEUE_NAME, connection=_redis())
-        rq_job = q.enqueue("app.jobs.transcribe_job", job.id, audio_path, work_dir,
-                           user_id, title, separate, engine, onset, job_timeout=JOB_TIMEOUT)
+        rq_job = q.enqueue("app.jobs.transcribe_job", job.id, audio_path, work_dir, user_id, title,
+                           separate, engine, onset, video_path, job_timeout=JOB_TIMEOUT)
         job.rq_id = rq_job.id
         db.session.commit()
     else:
-        transcribe_job(job.id, audio_path, work_dir, user_id, title, separate, engine, onset)
+        transcribe_job(job.id, audio_path, work_dir, user_id, title, separate, engine, onset,
+                       video_path)
     return job
 
 
-def enqueue_ingest(user_id, url, work_dir, title, separate=False, engine="local", onset=None):
-    """Job que descarga por URL (yt-dlp) y transcribe. La allowlist ya se validó en la ruta."""
+def enqueue_ingest(user_id, url, work_dir, title, separate=False, engine="local", onset=None,
+                   use_video=False):
+    """Job que descarga por URL (yt-dlp) y transcribe. La allowlist ya se validó en la ruta.
+    `use_video`: baja el video además del audio y corrige onset/offset por visión."""
     from flask import current_app
     from .models import Job
 
@@ -54,11 +60,11 @@ def enqueue_ingest(user_id, url, work_dir, title, separate=False, engine="local"
     if current_app.config.get("RQ_ASYNC", True):
         q = Queue(QUEUE_NAME, connection=_redis())
         rq_job = q.enqueue("app.jobs.ingest_job", job.id, url, work_dir, user_id, title, separate,
-                           engine, onset, job_timeout=JOB_TIMEOUT)
+                           engine, onset, use_video, job_timeout=JOB_TIMEOUT)
         job.rq_id = rq_job.id
         db.session.commit()
     else:
-        ingest_job(job.id, url, work_dir, user_id, title, separate, engine, onset)
+        ingest_job(job.id, url, work_dir, user_id, title, separate, engine, onset, use_video)
     return job
 
 
@@ -114,14 +120,25 @@ def midi_job(job_id, midi_path, work_dir, user_id, title):
         _execute(job_id, work_dir, app, lambda: work(app))
 
 
-def ingest_job(job_id, url, work_dir, user_id, title, separate=False, engine="local", onset=None):
+def ingest_job(job_id, url, work_dir, user_id, title, separate=False, engine="local", onset=None,
+               use_video=False):
     from flask import current_app, has_app_context
 
     def work(app):
-        from .ingest import HARD_CAP_SECONDS, download_audio
-        _stage(job_id, "descargando audio")
-        audio_path = download_audio(url, work_dir, HARD_CAP_SECONDS)
-        return _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, separate, app, engine, onset)
+        from .ingest import HARD_CAP_SECONDS, download_audio, download_video
+        if not use_video:
+            _stage(job_id, "descargando audio")
+            return _transcribe_and_store(job_id, download_audio(url, work_dir, HARD_CAP_SECONDS),
+                                         work_dir, user_id, title, separate, app, engine, onset)
+        _stage(job_id, "descargando el video")
+        video_path = download_video(url, work_dir, HARD_CAP_SECONDS)
+        # El video es también la fuente de audio, pero se lo damos al pipeline ya como WAV: así
+        # nada aguas abajo (Demucs/roformer, que no leen contenedores de video) tiene que saber
+        # que salió de un mp4. Sigue sincronizado: extraer el audio no lo corre en el tiempo.
+        audio_path = os.path.join(work_dir, uuid.uuid4().hex + ".wav")
+        normalize_audio(video_path, audio_path)
+        return _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, separate, app,
+                                     engine, onset, video_path)
 
     if has_app_context():
         app = current_app._get_current_object()
@@ -191,24 +208,29 @@ def reap_stale(user_id, redis_conn):
     return changed
 
 
-def transcribe_job(job_id, audio_path, work_dir, user_id, title, separate=False, engine="local", onset=None):
+def transcribe_job(job_id, audio_path, work_dir, user_id, title, separate=False, engine="local",
+                   onset=None, video_path=None):
     """Corre en el worker (sin app context) o inline en tests (con app context)."""
     from flask import current_app, has_app_context
 
     if has_app_context():
         app = current_app._get_current_object()
-        return _run(job_id, audio_path, work_dir, user_id, title, separate, app, engine, onset)
+        return _run(job_id, audio_path, work_dir, user_id, title, separate, app, engine, onset,
+                    video_path)
     from app import create_app
     app = create_app()
     with app.app_context():
-        return _run(job_id, audio_path, work_dir, user_id, title, separate, app, engine, onset)
+        return _run(job_id, audio_path, work_dir, user_id, title, separate, app, engine, onset,
+                    video_path)
 
 
-def _transcribe_one(wav, out_dir, title, user_id, app, engine="local", onset=None):
+def _transcribe_one(wav, out_dir, title, user_id, app, engine="local", onset=None, video_path=None,
+                    stage=None):
     """Transcribe un WAV de piano -> crea y devuelve un Score (sin commit)."""
     from .models import Score
     mscore = app.config.get("MSCORE_BIN")
-    xml, pdf = transcribe(wav, out_dir, title=title, mscore_bin=mscore, engine=engine, onset_threshold=onset)
+    xml, pdf = transcribe(wav, out_dir, title=title, mscore_bin=mscore, engine=engine,
+                          onset_threshold=onset, video_path=video_path, stage=stage)
     midi = os.path.join(out_dir, "notes.mid")
     has_midi = os.path.exists(midi)
     has_pdf = bool(pdf) and os.path.exists(pdf)
@@ -229,8 +251,11 @@ def _stage(job_id, text):
         db.session.commit()
 
 
-def _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, separate, app, engine="local", onset=None):
-    """Transcribe el piano -> un Score. Si `separate`, aísla primero el piano de la mezcla."""
+def _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, separate, app,
+                          engine="local", onset=None, video_path=None):
+    """Transcribe el piano -> un Score. Si `separate`, aísla primero el piano de la mezcla.
+    Si `video_path`, el análisis de video es una etapa más de este job (mismo worker, un solo
+    trabajo pesado a la vez)."""
     from .transcribers import DEFAULT, label_for
     wav = audio_path
     if separate:
@@ -245,7 +270,8 @@ def _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, separate
         _stage(job_id, "transcribiendo piano")
     out_dir = os.path.join(work_dir, "out")
     os.makedirs(out_dir, exist_ok=True)
-    score = _transcribe_one(wav, out_dir, title, user_id, app, engine, onset)
+    score = _transcribe_one(wav, out_dir, title, user_id, app, engine, onset, video_path,
+                            lambda t: _stage(job_id, t))
     if wav != audio_path:
         try:
             os.remove(wav)  # limpiar el stem WAV apenas se transcribió (§6.16)
@@ -298,6 +324,8 @@ def _execute(job_id, work_dir, app, produce_scores):
         shutil.rmtree(work_dir, ignore_errors=True)  # audio/original nunca se persiste
 
 
-def _run(job_id, audio_path, work_dir, user_id, title, separate, app, engine="local", onset=None):
+def _run(job_id, audio_path, work_dir, user_id, title, separate, app, engine="local", onset=None,
+         video_path=None):
     _execute(job_id, work_dir, app,
-             lambda: _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, separate, app, engine, onset))
+             lambda: _transcribe_and_store(job_id, audio_path, work_dir, user_id, title, separate,
+                                           app, engine, onset, video_path))

@@ -14,6 +14,7 @@ from ..extensions import db
 from ..jobs import cancel as cancel_job
 from ..jobs import enqueue_ingest, enqueue_midi, enqueue_transcription
 from ..models import Job, Score, User
+from ..video_transcription import detect_video_kind  # solo magic bytes; cv2 se importa adentro
 from .forms import UploadForm
 
 bp = Blueprint("main", __name__)
@@ -68,12 +69,27 @@ def upload():
     engine = _valid_engine(request.form.get("engine"))
     onset = _valid_onset(request.form.get("onset"))
 
+    # Video opcional del teclado (VPT). Mismo criterio que el audio: magic bytes, no extensión.
+    vf = form.video.data
+    vkind = None
+    if vf and vf.filename:
+        vkind = detect_video_kind(vf.stream.read(12))
+        vf.stream.seek(0)
+        if vkind is None:
+            flash("El video no parece un video válido (MP4/MOV/WEBM/MKV).")
+            return redirect(url_for("auth.dashboard"))
+
     title = (os.path.splitext(f.filename or "audio")[0] or "audio")[:200]  # solo display
-    # work_dir persiste hasta que el worker termine y lo limpie (audio nunca se persiste).
+    # work_dir persiste hasta que el worker termine y lo limpie (audio/video nunca se persisten).
     work_dir = tempfile.mkdtemp(prefix="clavis_")
     src = os.path.join(work_dir, f"{uuid.uuid4().hex}.{kind}")
     f.save(src)
-    job = enqueue_transcription(current_user.id, src, work_dir, title, separate, engine, onset)
+    video_src = None
+    if vkind:
+        video_src = os.path.join(work_dir, f"{uuid.uuid4().hex}.{vkind}")
+        vf.save(video_src)
+    job = enqueue_transcription(current_user.id, src, work_dir, title, separate, engine, onset,
+                                video_src)
     return redirect(url_for("main.job_view", job_id=job.id))
 
 
@@ -152,6 +168,7 @@ def ingest():
     separate = request.form.get("separate") == "1"
     engine = _valid_engine(request.form.get("engine"))
     onset = _valid_onset(request.form.get("onset"))
+    use_video = request.form.get("video") == "1"  # bajar también el video y corregir por visión
     confirmed = request.form.get("confirm") == "1"
     try:
         duration, title = probe(url)
@@ -167,10 +184,11 @@ def ingest():
     # Advertencia blanda (UX): pedir confirmación explícita si supera 15 min.
     if duration is not None and duration > SOFT_CAP_SECONDS and not confirmed:
         return render_template("confirm_long.html", url=url, separate=separate, engine=engine,
-                               onset=(request.form.get("onset") or ""), minutes=duration // 60)
+                               onset=(request.form.get("onset") or ""), minutes=duration // 60,
+                               use_video=use_video)
 
     work_dir = tempfile.mkdtemp(prefix="clavis_")
-    job = enqueue_ingest(current_user.id, url, work_dir, title, separate, engine, onset)
+    job = enqueue_ingest(current_user.id, url, work_dir, title, separate, engine, onset, use_video)
     return redirect(url_for("main.job_view", job_id=job.id))
 
 
