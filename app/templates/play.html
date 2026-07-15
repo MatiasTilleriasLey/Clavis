@@ -194,7 +194,14 @@
   // ---- Web MIDI (para el modo esperar tecla) ----
   let midi = null, midiReq = false;
   function bindMidi() { if (!midi) return; for (const i of midi.inputs.values()) { try { i.open && i.open(); } catch (e) {} i.onmidimessage = onMidiMsg; } }
-  function onMidiMsg(e) { const b = e.data; if ((b[0] & 0xf0) === 0x90 && b[2] > 0) onMidiNote(b[1], b[2]); }
+  const pressed = new Set();   // teclas que el usuario tiene apretadas ahora mismo (para verlas en pantalla)
+  function onMidiMsg(e) {
+    const b = e.data, cmd = b[0] & 0xf0, d1 = b[1], d2 = b[2];
+    if (cmd === 0x90 && d2 > 0) { pressed.add(d1); onMidiNote(d1, d2); }
+    else if (cmd === 0x80 || (cmd === 0x90 && d2 === 0)) { pressed.delete(d1); }
+    else return;
+    if (!playing) draw(songT);   // refrescar el teclado aunque el loop no esté corriendo
+  }
   function ensureMIDI() {
     if (midiReq || !navigator.requestMIDIAccess) {
       if (!navigator.requestMIDIAccess) mstatus.textContent = 'sin Web MIDI (usá Chrome/Edge, o Firefox con el teclado conectado al iniciar)';
@@ -297,38 +304,44 @@
     timeEl.textContent = fmt(t) + ' / ' + fmt(songDur);
   }
 
-  const AMBER = '#F5A623';
+  const AMBER = '#F5A623', RIGHT = '#22c55e', WRONG = '#ef4444';
   function drawKeyboard(active) {
     const bh = KB_H * 0.62;
     const wait = (waitMode && waiting && curStep < steps.length) ? steps[curStep] : null;
     const target = p => wait && wait.need.has(p) && !wait.hit.has(p);   // tecla pendiente por tocar
+    // color de la tecla que estás apretando: verde si es correcta, rojo si no (azul fuera de wait)
+    const pressColor = p => !pressed.has(p) ? null : (wait ? (wait.need.has(p) ? RIGHT : WRONG) : '#60a5fa');
     // blancas
     for (let p = lo; p <= hi; p++) {
       const k = layout[p]; if (!k || k.black) continue;
-      const on = active[p], c = hand(p);
-      const g = ctx.createLinearGradient(0, keyTop, 0, cssH);
-      if (on) { g.addColorStop(0, c.a); g.addColorStop(1, c.b); }
-      else { g.addColorStop(0, '#f4f5f7'); g.addColorStop(1, '#cfd3da'); }
-      ctx.fillStyle = g; ctx.fillRect(k.x, keyTop, k.w, KB_H);
+      const on = active[p], c = hand(p), pc = pressColor(p);
+      if (pc) { ctx.fillStyle = pc; ctx.fillRect(k.x, keyTop, k.w, KB_H); }
+      else {
+        const g = ctx.createLinearGradient(0, keyTop, 0, cssH);
+        if (on) { g.addColorStop(0, c.a); g.addColorStop(1, c.b); }
+        else { g.addColorStop(0, '#f4f5f7'); g.addColorStop(1, '#cfd3da'); }
+        ctx.fillStyle = g; ctx.fillRect(k.x, keyTop, k.w, KB_H);
+        if (on) { ctx.fillStyle = c.g; ctx.fillRect(k.x, keyTop, k.w, 6); }
+      }
       ctx.strokeStyle = '#0b0d10'; ctx.lineWidth = 1; ctx.strokeRect(k.x + 0.5, keyTop + 0.5, k.w - 1, KB_H - 1);
-      if (on) { ctx.fillStyle = c.g; ctx.fillRect(k.x, keyTop, k.w, 6); }
-      if (target(p)) { ctx.strokeStyle = AMBER; ctx.lineWidth = 3;
+      if (target(p) && !pc) { ctx.strokeStyle = AMBER; ctx.lineWidth = 3;
         ctx.strokeRect(k.x + 1.5, keyTop + 1.5, k.w - 3, KB_H - 3);
         ctx.fillStyle = 'rgba(245,166,35,.35)'; ctx.fillRect(k.x, keyTop, k.w, KB_H); }
-      if (p % 12 === 0) { ctx.fillStyle = on ? '#06201c' : '#8b929c';
+      if (p % 12 === 0) { ctx.fillStyle = (on || pc) ? '#06201c' : '#8b929c';
         ctx.font = '9px ' + getComputedStyle(document.body).fontFamily;
         ctx.textAlign = 'center'; ctx.fillText('C' + (p / 12 - 1), k.x + k.w / 2, cssH - 5); }
     }
     // negras (encima)
     for (let p = lo; p <= hi; p++) {
       const k = layout[p]; if (!k || !k.black) continue;
-      const on = active[p], c = hand(p);
-      const g = ctx.createLinearGradient(0, keyTop, 0, keyTop + bh);
-      if (on) { g.addColorStop(0, c.a); g.addColorStop(1, c.b); }
-      else { g.addColorStop(0, '#2a2f37'); g.addColorStop(1, '#0d0f12'); }
-      rrect(k.x, keyTop, k.w, bh, 3); ctx.fillStyle = g; ctx.fill();
-      ctx.strokeStyle = target(p) ? AMBER : '#000'; ctx.lineWidth = target(p) ? 2.5 : 1; ctx.stroke();
-      if (on) { ctx.fillStyle = 'rgba(255,255,255,.5)'; rrect(k.x, keyTop, k.w, 4, 2); ctx.fill(); }
+      const on = active[p], c = hand(p), pc = pressColor(p);
+      rrect(k.x, keyTop, k.w, bh, 3);
+      if (pc) { ctx.fillStyle = pc; }
+      else { const g = ctx.createLinearGradient(0, keyTop, 0, keyTop + bh);
+        if (on) { g.addColorStop(0, c.a); g.addColorStop(1, c.b); } else { g.addColorStop(0, '#2a2f37'); g.addColorStop(1, '#0d0f12'); }
+        ctx.fillStyle = g; }
+      ctx.fill();
+      ctx.strokeStyle = (target(p) && !pc) ? AMBER : '#000'; ctx.lineWidth = (target(p) && !pc) ? 2.5 : 1; ctx.stroke();
     }
   }
 
@@ -355,12 +368,7 @@
       tempo = d.tempo || 120; notes = d.notes || []; pedals = d.pedals || [];
       songDur = notes.reduce((m, n) => Math.max(m, n.end), 0);
       buildSteps();
-      if (notes.length) {
-        let mn = 127, mx = 0; for (const n of notes) { if (n.pitch < mn) mn = n.pitch; if (n.pitch > mx) mx = n.pitch; }
-        lo = Math.max(21, Math.floor(mn / 12) * 12);        // arrancar en un Do para un teclado prolijo
-        hi = Math.min(108, Math.ceil((mx + 1) / 12) * 12 - 1);
-        if (hi - lo < 24) hi = Math.min(108, lo + 24);      // mínimo 2 octavas
-      }
+      lo = 21; hi = 108;                                    // teclado completo de 88 teclas (A0–C8)
       resize();
     }).catch(() => { resize(); });
 })();
